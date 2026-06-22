@@ -1,0 +1,9 @@
+{
+  "name": "com.mastertraderblitz.click",
+  "description": "Master Trader Blitz OS-level click helper",
+  "path": "REPLACE_WITH_ABSOLUTE_PATH_TO_click_host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://fgoiflmeneldlkciaheheinkbicgbpnl/"
+  ]
+}

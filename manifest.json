@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Master Trader Blitz",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsJQ4GCaNCIgxIbst6aUbjtYPjRm5xhSXusOWlZIQGicjS40iLo1Os0qivjPIohI09ABokwB9cqETizlQ6Qm7xJVIx8zdup15Fr8WdQJ37eO03lLnBT6lyqBvqZZpe/TKHrfX2wrtZPyYfdsXi70kJAhjVb6TogCqUz1cLy3esPzdFcmUAX03YOkr9ntcp5m4M+NmaryIQwdF6uOB4u6mRT+gGObKILH2wg6dBKVd1+X+zr1lC+CFUUthwjm82o8WADPOEdO9pRlWNIt9HMEKZM2ao+Lk4Y36JbNxdMrsf4ATyaO6q2kzNxQFH5W7BmMiSPMMuYupZqCPDVmgeo4nWQIDAQAB",
+  "description": "RSI + Stochastic + Bollinger signal engine for Exnova 5-second binary options",
+  "permissions": ["storage", "tabs", "debugger", "nativeMessaging"],
+  "host_permissions": ["https://trade.exnova.com/*"],
+  "background": {
+    "service_worker": "src/background/service-worker.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://trade.exnova.com/*"],
+      "js": ["src/content/ws-interceptor.ts"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://trade.exnova.com/*"],
+      "js": ["src/content/page-bridge.ts"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://trade.exnova.com/*"],
+      "js": ["src/content/main.tsx"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_ui": {
+    "page": "src/options/index.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "public/icon-16.png",
+    "48": "public/icon-48.png",
+    "128": "public/icon-128.png"
+  },
+  "action": {
+    "default_title": "Master Trader Blitz",
+    "default_icon": {
+      "16": "public/icon-16.png",
+      "48": "public/icon-48.png",
+      "128": "public/icon-128.png"
+    }
+  }
+}
