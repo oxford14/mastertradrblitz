@@ -194,8 +194,10 @@ export class TradingPipeline {
     const holdMs = this.settings.market.signalHoldSec * 1000;
     const hold = this.holdTracker.getState(now, holdMs);
     const closedBarTs = closedCandles[closedCandles.length - 1]?.timestamp ?? null;
+    const canEmitTrade = this.cooldownTracker.canAcceptNewBarSignal(now);
 
     if (
+      canEmitTrade &&
       this.wasConfirming &&
       !hold.confirming &&
       (hold.signal === 'HIGHER' || hold.signal === 'LOWER')
@@ -207,6 +209,7 @@ export class TradingPipeline {
       );
       this.emitTradeConfirmed(hold.signal, closedIndicators.warmedUp);
     } else if (
+      canEmitTrade &&
       barClosed &&
       holdMs === 0 &&
       !hold.confirming &&

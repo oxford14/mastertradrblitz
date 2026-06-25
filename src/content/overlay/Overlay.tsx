@@ -1,6 +1,7 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import type { AutoTradeStatus, QualityChecklist, SignalDebug, SignalResult } from '../../types';
+import type { AutoTradeStatsSnapshot, AutoTradeStatus, MaTrend, ProgressionSnapshot, QualityChecklist, SignalDebug, SignalResult } from '../../types';
 import { getExnovaGuide, isTradeExpirySec } from '../../lib/settings/presets';
+import { displayConfidence, maTrendLabel } from '../../lib/signals/signal-engine';
 import { ExnovaGuideCard } from '../../options/ExnovaGuideCard';
 
 interface OverlayProps {
@@ -12,6 +13,9 @@ interface OverlayProps {
   autoTradeEnabled: boolean;
   autoTradeDryRun: boolean;
   autoTradeStatus: AutoTradeStatus;
+  autoTradeStats: AutoTradeStatsSnapshot;
+  progressionEnabled: boolean;
+  progressionSnapshot: ProgressionSnapshot;
   onAutoTradeToggle: (enabled: boolean) => void;
 }
 
@@ -27,7 +31,16 @@ const REQUIREMENT_ROWS: {
   { key: 'rejectionWick', label: 'Rejection Wick' },
 ];
 
-function RequirementsList({ checklist }: { checklist: QualityChecklist }) {
+function RequirementsList({
+  checklist,
+  maTrend,
+}: {
+  checklist: QualityChecklist;
+  maTrend: MaTrend;
+}) {
+  const trendClass =
+    maTrend === 'neutral' ? 'mtb-fail' : 'mtb-ok';
+
   return (
     <div className="mtb-requirements">
       <div className="mtb-requirements-title">Requirements</div>
@@ -39,6 +52,10 @@ function RequirementsList({ checklist }: { checklist: QualityChecklist }) {
           </span>
         </div>
       ))}
+      <div className="mtb-req-item">
+        <span>Moving Average Trend</span>
+        <span className={trendClass}>{maTrendLabel(maTrend)}</span>
+      </div>
     </div>
   );
 }
@@ -47,7 +64,7 @@ function formatScoreBreakdown(
   label: string,
   c: SignalDebug['higherConfidence'],
 ): string {
-  return `${label}: RSI ${c.rsi} + Stoch ${c.stochastic} + Pattern ${c.candlePattern} + BB ${c.bollinger} + Wick ${c.rejectionWick}`;
+  return `${label}: RSI ${c.rsi} + Stoch ${c.stochastic} + Pattern ${c.candlePattern} + BB ${c.bollinger} + Wick ${c.rejectionWick} + MA ${c.movingAverage}`;
 }
 
 function AdvancedPanel({
@@ -129,6 +146,9 @@ export function Overlay({
   autoTradeEnabled,
   autoTradeDryRun,
   autoTradeStatus,
+  autoTradeStats,
+  progressionEnabled,
+  progressionSnapshot,
   onAutoTradeToggle,
 }: OverlayProps) {
   const signal = result?.signal ?? 'WAIT';
@@ -138,16 +158,18 @@ export function Overlay({
   const ind = result?.indicators;
   const pattern = result?.pattern;
   const dualConfidence = result?.dualConfidence;
-  const higherPct = dualConfidence?.higher.total ?? 0;
-  const lowerPct = dualConfidence?.lower.total ?? 0;
+  const higherPct = displayConfidence(dualConfidence?.higher.total ?? 0);
+  const lowerPct = displayConfidence(dualConfidence?.lower.total ?? 0);
   const activeCheck = result?.activeCheck ?? {
     rsi: false,
     stochastic: false,
     candlePattern: false,
     bollinger: false,
     rejectionWick: false,
+    movingAverageTrend: false,
   };
   const debug = result?.debug;
+  const maTrend = ind?.maTrend ?? debug?.maTrend ?? 'neutral';
   const guide = getExnovaGuide(
     isTradeExpirySec(tradeExpirySec) ? tradeExpirySec : 5,
   );
@@ -199,6 +221,30 @@ export function Overlay({
       ? autoTradeStatus.message
       : null;
 
+  const wlTitle = `Auto-trade session wins/losses · Best win streak ${autoTradeStats.longestWinStreak} · Best loss streak ${autoTradeStats.longestLossStreak}`;
+
+  const wlDisplay = (
+    <>
+      W/L{' '}
+      <span className="mtb-wl-wins">{autoTradeStats.wins}</span>/
+      <span className="mtb-wl-losses">{autoTradeStats.losses}</span>
+      {(autoTradeStats.longestWinStreak > 0 ||
+        autoTradeStats.longestLossStreak > 0) && (
+        <span className="mtb-wl-streaks">
+          {' '}
+          · W×{autoTradeStats.longestWinStreak} · L×{autoTradeStats.longestLossStreak}
+        </span>
+      )}
+      {autoTradeStats.pendingCount > 0 && (
+        <span className="mtb-wl-pending"> · pending</span>
+      )}
+    </>
+  );
+
+  const progressionLine = progressionEnabled
+    ? `${progressionSnapshot.profileId} · Level ${progressionSnapshot.level} · Stake: ${progressionSnapshot.stake}`
+    : null;
+
   return (
     <div
       className="mtb-overlay"
@@ -212,15 +258,16 @@ export function Overlay({
         onPointerUp={onPointerUp}
       >
         <span className="mtb-title">Master Trader Blitz</span>
-        <div
+        <label
           className="mtb-auto-switch"
           onPointerDown={(e) => e.stopPropagation()}
         >
           <span className="mtb-auto-switch-label">Auto</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={autoTradeEnabled}
+          <input
+            type="checkbox"
+            className="mtb-switch-input"
+            checked={autoTradeEnabled}
+            onChange={(e) => onAutoTradeToggle(e.target.checked)}
             aria-label={
               autoTradeEnabled
                 ? autoTradeDryRun
@@ -228,18 +275,16 @@ export function Overlay({
                   : 'Auto-trade on'
                 : 'Auto-trade off'
             }
-            className={`mtb-switch ${autoTradeEnabled ? 'mtb-switch-on' : ''}`}
-            onClick={() => onAutoTradeToggle(!autoTradeEnabled)}
-          >
-            <span className="mtb-switch-thumb" />
-          </button>
-        </div>
+          />
+          <span className="mtb-switch-track" aria-hidden="true" />
+        </label>
         <button
           type="button"
           className="mtb-collapse"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => setPanelCollapsed((c) => !c)}
           aria-label={panelCollapsed ? 'Expand' : 'Collapse'}
+          aria-expanded={!panelCollapsed}
         >
           {panelCollapsed ? '+' : '−'}
         </button>
@@ -248,8 +293,33 @@ export function Overlay({
         </span>
       </div>
 
-      {!panelCollapsed && (
+      {panelCollapsed ? (
+        <div className="mtb-compact-bar">
+          <span className={`mtb-compact-signal ${signalClass}`}>
+            {confirming && pendingSignal !== 'WAIT' ? pendingSignal : signalLabel}
+          </span>
+          {progressionEnabled && (
+            <span className="mtb-compact-stake" title="Current progression stake">
+              L{progressionSnapshot.level} ${progressionSnapshot.stake}
+            </span>
+          )}
+          <span className="mtb-compact-wl" title={wlTitle}>
+            {wlDisplay}
+          </span>
+        </div>
+      ) : (
         <>
+          {progressionEnabled && (
+            <div className="mtb-progression">
+              <div className="mtb-progression-title">Current Progression</div>
+              <div className="mtb-progression-line">{progressionLine}</div>
+            </div>
+          )}
+
+          {progressionEnabled && progressionSnapshot.lastWarning && (
+            <div className="mtb-progression-alert">{progressionSnapshot.lastWarning}</div>
+          )}
+
           <div className={`mtb-signal-hero ${signalClass}`}>{signalLabel}</div>
 
           {confirming && pendingSignal !== 'WAIT' && (
@@ -295,7 +365,7 @@ export function Overlay({
                 </div>
               </div>
 
-              <RequirementsList checklist={activeCheck} />
+              <RequirementsList checklist={activeCheck} maTrend={maTrend} />
 
               {pattern && pattern.pattern !== 'None' && (
                 <div className="mtb-pattern-block">
@@ -326,6 +396,9 @@ export function Overlay({
           )}
 
           <div className="mtb-status">
+            <span className="mtb-wl" title={wlTitle}>
+              {wlDisplay}
+            </span>
             <span title="active_id">{symbol}</span>
             <span>{tradeExpirySec}s</span>
             <span>

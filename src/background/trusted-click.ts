@@ -1,82 +1,23 @@
 const NATIVE_HOST = 'com.mastertraderblitz.click';
 
 export interface TrustedClickRequest {
-  clientX: number;
-  clientY: number;
-  screenX: number;
-  screenY: number;
-  engine: 'debugger' | 'native' | 'synthetic';
+  signal?: 'HIGHER' | 'LOWER';
+  engine: 'native';
+  tabId?: number;
+}
+
+export interface NativeTargetPoint {
+  x: number;
+  y: number;
 }
 
 export interface TrustedClickResponse {
   ok: boolean;
   message: string;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function debuggerClick(
-  tabId: number,
-  clientX: number,
-  clientY: number,
-): Promise<TrustedClickResponse> {
-  const target = { tabId };
-
-  try {
-    await chrome.debugger.attach(target, '1.3');
-  } catch (error) {
-    return {
-      ok: false,
-      message:
-        error instanceof Error
-          ? `Debugger attach failed: ${error.message}`
-          : 'Debugger attach failed',
-    };
-  }
-
-  try {
-    await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
-      type: 'mouseMoved',
-      x: clientX,
-      y: clientY,
-    });
-    await sleep(30);
-    await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
-      type: 'mousePressed',
-      x: clientX,
-      y: clientY,
-      button: 'left',
-      clickCount: 1,
-    });
-    await sleep(20);
-    await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
-      type: 'mouseReleased',
-      x: clientX,
-      y: clientY,
-      button: 'left',
-      clickCount: 1,
-    });
-    return {
-      ok: true,
-      message: `Trusted click at ${clientX}, ${clientY}`,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      message:
-        error instanceof Error
-          ? `Debugger click failed: ${error.message}`
-          : 'Debugger click failed',
-    };
-  } finally {
-    try {
-      await chrome.debugger.detach(target);
-    } catch {
-      // Ignore detach errors.
-    }
-  }
+  higher?: NativeTargetPoint;
+  lower?: NativeTargetPoint;
+  amount?: NativeTargetPoint;
+  updatedAt?: string;
 }
 
 function sendNativeMessage(payload: object): Promise<TrustedClickResponse> {
@@ -97,15 +38,30 @@ function sendNativeMessage(payload: object): Promise<TrustedClickResponse> {
       };
 
       port.onMessage.addListener((message) => {
+        const data = message as {
+          ok?: boolean;
+          message?: string;
+          higher?: NativeTargetPoint;
+          lower?: NativeTargetPoint;
+          amount?: NativeTargetPoint;
+          updatedAt?: string;
+        };
         finish({
-          ok: Boolean((message as { ok?: boolean }).ok),
-          message: String((message as { message?: string }).message ?? 'Native click sent'),
+          ok: Boolean(data.ok),
+          message: String(data.message ?? 'Native message sent'),
+          higher: data.higher,
+          lower: data.lower,
+          amount: data.amount,
+          updatedAt: data.updatedAt,
         });
       });
 
       port.onDisconnect.addListener(() => {
         if (chrome.runtime.lastError && !settled) {
-          finish({ ok: false, message: chrome.runtime.lastError.message ?? 'Native host disconnected' });
+          finish({
+            ok: false,
+            message: chrome.runtime.lastError.message ?? 'Native host disconnected',
+          });
           return;
         }
         if (!settled) {
@@ -123,35 +79,103 @@ function sendNativeMessage(payload: object): Promise<TrustedClickResponse> {
   });
 }
 
-async function nativeClick(
-  screenX: number,
-  screenY: number,
-): Promise<TrustedClickResponse> {
+async function nativeClick(signal?: 'HIGHER' | 'LOWER'): Promise<TrustedClickResponse> {
+  if (!signal) {
+    return {
+      ok: false,
+      message: 'Native click requires HIGHER or LOWER signal',
+    };
+  }
+
   return sendNativeMessage({
     action: 'click',
-    x: screenX,
-    y: screenY,
+    signal,
   });
 }
 
 export async function dispatchTrustedClick(
-  tabId: number,
   request: TrustedClickRequest,
 ): Promise<TrustedClickResponse> {
-  if (request.engine === 'native') {
-    return nativeClick(request.screenX, request.screenY);
-  }
-
-  if (request.engine === 'debugger') {
-    return debuggerClick(tabId, request.clientX, request.clientY);
-  }
-
-  return {
-    ok: false,
-    message: 'Synthetic clicks are handled in the content script',
-  };
+  return nativeClick(request.signal);
 }
 
 export async function pingNativeHelper(): Promise<TrustedClickResponse> {
-  return sendNativeMessage({ action: 'ping' });
+  const ping = await sendNativeMessage({ action: 'ping' });
+  if (!ping.ok) return ping;
+
+  const targets = await sendNativeMessage({ action: 'getTargets' });
+  if (targets.ok && targets.higher && targets.lower) {
+    const parts = [
+      `HIGHER @ ${targets.higher.x}, ${targets.higher.y}`,
+      `LOWER @ ${targets.lower.x}, ${targets.lower.y}`,
+    ];
+    if (targets.amount) {
+      parts.push(`AMOUNT @ ${targets.amount.x}, ${targets.amount.y}`);
+    } else {
+      parts.push('AMOUNT not calibrated');
+    }
+    return {
+      ok: true,
+      message: `pong — ${parts.join(' · ')}`,
+      higher: targets.higher,
+      lower: targets.lower,
+      amount: targets.amount,
+      updatedAt: targets.updatedAt,
+    };
+  }
+
+  return {
+    ok: true,
+    message: 'pong (not calibrated — run MtbClickHelper.exe --calibrate)',
+  };
+}
+
+export async function getNativeTargets(): Promise<TrustedClickResponse> {
+  return sendNativeMessage({ action: 'getTargets' });
+}
+
+export interface SetAmountRequest {
+  amount: string;
+  screenX?: number;
+  screenY?: number;
+}
+
+export async function dispatchFocusAmount(): Promise<TrustedClickResponse> {
+  return sendNativeMessage({ action: 'focusAmount' });
+}
+
+export async function dispatchPasteAmount(
+  request: { amount: string },
+): Promise<TrustedClickResponse> {
+  return sendNativeMessage({
+    action: 'pasteAmount',
+    amount: request.amount,
+  });
+}
+
+export async function dispatchTypeAmount(
+  request: { amount: string },
+): Promise<TrustedClickResponse> {
+  return sendNativeMessage({
+    action: 'typeAmount',
+    amount: request.amount,
+  });
+}
+
+export async function dispatchKeypadAmount(
+  request: { amount: string },
+): Promise<TrustedClickResponse> {
+  return sendNativeMessage({
+    action: 'keypadAmount',
+    amount: request.amount,
+  });
+}
+
+/** @deprecated Use dispatchFocusAmount + dispatchTypeAmount */
+export async function dispatchSetAmount(
+  request: SetAmountRequest,
+): Promise<TrustedClickResponse> {
+  const focus = await dispatchFocusAmount();
+  if (!focus.ok) return focus;
+  return dispatchTypeAmount({ amount: request.amount });
 }

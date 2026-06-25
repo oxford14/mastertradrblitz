@@ -21,8 +21,11 @@ const base: IndicatorSnapshot = {
   barsSinceBullishCross: 1,
   barsSinceBearishCross: null,
   warmedUp: true,
-  warmupRequired: 15,
-  warmupCurrent: 20,
+  warmupRequired: 21,
+  warmupCurrent: 25,
+  maFast: 100,
+  maSlow: 99,
+  maTrend: 'up',
 };
 
 const bullishPattern: PatternSnapshot = {
@@ -44,9 +47,11 @@ describe('signal debug reasons', () => {
       adx,
     );
     expect(result.debug.reason).toContain('HIGHER');
-    expect(result.debug.higherConfidence.total).toBe(100);
+    expect(result.debug.higherConfidence.total).toBe(110);
+    expect(result.debug.reason).toContain('100%');
     expect(result.debug.adx).toBe(25);
     expect(result.debug.plusDi).toBe(30);
+    expect(result.debug.maTrend).toBe('up');
   });
 
   it('explains WAIT when below threshold', () => {
@@ -58,6 +63,9 @@ describe('signal debug reasons', () => {
         bbLower: 95,
         bullishCrossValid: false,
         barsSinceBullishCross: null,
+        maTrend: 'neutral',
+        maFast: 100,
+        maSlow: 100,
       },
       bullishPattern,
       EMPTY_WICK,
@@ -76,11 +84,12 @@ describe('signal debug reasons', () => {
       'HIGHER',
       adx,
     );
-    expect(debug.higherConfidence.rsi).toBe(25);
+    expect(debug.higherConfidence.rsi).toBe(30);
     expect(debug.higherConfidence.stochastic).toBe(30);
-    expect(debug.higherConfidence.candlePattern).toBe(25);
-    expect(debug.higherConfidence.bollinger).toBe(5);
-    expect(debug.higherConfidence.rejectionWick).toBe(15);
+    expect(debug.higherConfidence.candlePattern).toBe(20);
+    expect(debug.higherConfidence.bollinger).toBe(10);
+    expect(debug.higherConfidence.rejectionWick).toBe(10);
+    expect(debug.higherConfidence.movingAverage).toBe(10);
     expect(debug.lowerConfidence.total).toBe(0);
   });
 });

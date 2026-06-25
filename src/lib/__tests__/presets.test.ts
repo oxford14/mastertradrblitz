@@ -37,11 +37,13 @@ describe('presets', () => {
     expect(preset.autoTrade.enabled).toBe(false);
     expect(preset.autoTrade.dryRun).toBe(true);
     expect(preset.autoTrade.useCanvas).toBe(true);
-    expect(preset.autoTrade.clickEngine).toBe('debugger');
+    expect(preset.autoTrade.clickEngine).toBe('native');
     expect(preset.autoTrade.canvas.higherXPercent).toBe(88);
     expect(preset.market.signalCooldownSec).toBe(5);
     expect(preset.market.signalDebugMode).toBe(true);
-    expect(preset.ema.enabled).toBe(false);
+    expect(preset.movingAverage.fastPeriod).toBe(9);
+    expect(preset.movingAverage.slowPeriod).toBe(21);
+    expect(preset.movingAverage.type).toBe('ema');
   });
 
   it('validation preserves tradeExpirySec', () => {

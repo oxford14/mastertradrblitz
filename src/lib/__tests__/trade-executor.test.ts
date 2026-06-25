@@ -1,26 +1,13 @@
 /**
  * @vitest-environment happy-dom
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import {
-  executeTrade,
-  probeTradeTargets,
-} from '../exnova/trade-executor';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { executeTrade, probeTradeTargets } from '../exnova/trade-executor';
 import { findTradeButton } from '../exnova/exnova-dom-finder';
 import { DEFAULT_SETTINGS } from '../settings/defaults';
-import {
-  dispatchCanvasClickInPage,
-  findGlCanvas,
-} from '../exnova/canvas-click';
-import {
-  resetCanvasClickHandler,
-  setCanvasClickHandler,
-} from '../exnova/canvas-click-bridge';
+import * as trustedClickClient from '../exnova/trusted-click-client';
 
-const autoTrade = {
-  ...DEFAULT_SETTINGS.autoTrade,
-  clickEngine: 'synthetic' as const,
-};
+const nativeAutoTrade = DEFAULT_SETTINGS.autoTrade;
 
 function mountTradeButtons(): void {
   document.body.innerHTML = `
@@ -29,21 +16,6 @@ function mountTradeButtons(): void {
       <button type="button" id="lower">Lower</button>
     </div>
   `;
-  for (const id of ['higher', 'lower']) {
-    const el = document.getElementById(id) as HTMLButtonElement;
-    el.getBoundingClientRect = () =>
-      ({
-        left: 100,
-        top: 100,
-        width: 80,
-        height: 40,
-        right: 180,
-        bottom: 140,
-        x: 100,
-        y: 100,
-        toJSON: () => ({}),
-      }) as DOMRect;
-  }
 }
 
 function mountGlCanvas(): HTMLCanvasElement {
@@ -65,17 +37,6 @@ function mountGlCanvas(): HTMLCanvasElement {
   return canvas;
 }
 
-function installPageBridgeStub(): void {
-  setCanvasClickHandler(async (xPercent, yPercent) => {
-    const canvas = findGlCanvas(document);
-    if (!canvas) {
-      return { ok: false, message: '#glcanvas not found' };
-    }
-    const result = dispatchCanvasClickInPage(canvas, xPercent, yPercent);
-    return { ok: true, hitCanvas: result.hitCanvas, message: result.message };
-  });
-}
-
 describe('findTradeButton', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -90,39 +51,26 @@ describe('findTradeButton', () => {
 describe('executeTrade', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
-    installPageBridgeStub();
+    vi.restoreAllMocks();
   });
 
-  afterEach(() => {
-    resetCanvasClickHandler();
+  it('native dry run does not call trusted click', async () => {
+    const trustedSpy = vi.spyOn(trustedClickClient, 'requestTrustedClick');
+    const result = await executeTrade('LOWER', true, nativeAutoTrade, document);
+    expect(trustedSpy).not.toHaveBeenCalled();
+    expect(result.message).toContain('calibrated LOWER');
+    expect(result.method).toBe('native');
   });
 
-  it('dry run does not click DOM button', async () => {
-    mountTradeButtons();
-    const higher = document.getElementById('higher') as HTMLButtonElement;
-    const clickSpy = vi.spyOn(higher, 'click');
-    const result = await executeTrade('HIGHER', true, autoTrade, document);
+  it('native engine sends signal to trusted click client', async () => {
+    const trustedSpy = vi.spyOn(trustedClickClient, 'requestTrustedClick').mockResolvedValue({
+      ok: true,
+      message: 'clicked HIGHER @ 100, 200',
+    });
+    const result = await executeTrade('HIGHER', false, nativeAutoTrade, document);
+    expect(trustedSpy).toHaveBeenCalledWith({ signal: 'HIGHER' });
     expect(result.ok).toBe(true);
-    expect(result.method).toBe('dom');
-    expect(clickSpy).not.toHaveBeenCalled();
-  });
-
-  it('uses canvas when no DOM buttons', async () => {
-    mountGlCanvas();
-    const result = await executeTrade('HIGHER', true, autoTrade, document);
-    expect(result.ok).toBe(true);
-    expect(result.method).toBe('canvas');
-    expect(result.message).toContain('HIGHER');
-  });
-
-  it('dispatches pointer events on canvas click via page bridge', async () => {
-    const canvas = mountGlCanvas();
-    const dispatchSpy = vi.spyOn(canvas, 'dispatchEvent');
-    const result = await executeTrade('LOWER', false, autoTrade, document);
-    expect(result.ok).toBe(true);
-    expect(result.method).toBe('synthetic');
-    expect(result.message).toContain('Sent synthetic');
-    expect(dispatchSpy.mock.calls.length).toBeGreaterThanOrEqual(5);
+    expect(result.method).toBe('native');
   });
 });
 
@@ -131,12 +79,16 @@ describe('probeTradeTargets', () => {
     document.body.innerHTML = '';
   });
 
-  it('reports canvas mode when glcanvas present', () => {
-    mountGlCanvas();
-    const result = probeTradeTargets(autoTrade, document);
+  it('reports calibrator hint for native engine', () => {
+    const result = probeTradeTargets(nativeAutoTrade, document);
+    expect(result.message).toContain('calibrate');
     expect(result.higher).toBe(true);
     expect(result.lower).toBe(true);
+  });
+
+  it('notes when glcanvas is present', () => {
+    mountGlCanvas();
+    const result = probeTradeTargets(nativeAutoTrade, document);
     expect(result.canvasFound).toBe(true);
-    expect(result.message).toContain('Canvas targets');
   });
 });

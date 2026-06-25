@@ -23,8 +23,11 @@ function warmedSnapshot(
     barsSinceBullishCross: null,
     barsSinceBearishCross: null,
     warmedUp: false,
-    warmupRequired: 15,
+    warmupRequired: 21,
     warmupCurrent: 5,
+    maFast: 100,
+    maSlow: 100,
+    maTrend: 'neutral',
     ...overrides,
   };
 }

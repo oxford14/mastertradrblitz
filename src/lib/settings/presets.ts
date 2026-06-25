@@ -55,7 +55,11 @@ const EXNOVA_GUIDES: Record<TradeExpirySec, ExnovaGuide> = {
 };
 
 const DEFAULT_ADX = { period: 14, threshold: 20 };
-const DEFAULT_EMA = { fastPeriod: 20, slowPeriod: 50, enabled: false };
+const DEFAULT_MOVING_AVERAGE = {
+  fastPeriod: 9,
+  slowPeriod: 21,
+  type: 'ema' as const,
+};
 const DEFAULT_RSI = {
   period: 14,
   overbought: 70,
@@ -69,11 +73,21 @@ const DEFAULT_STOCH = {
   oversold: 20,
   crossValidityBars: 3,
 };
+const DEFAULT_PROGRESSION = {
+  enabled: false,
+  profileId: 'D200' as const,
+  customLevels: [200, 488, 1084, 2408, 5352, 11890, 26428, 58731, 130510, 290028],
+  maxLevel: 10 as const,
+  resetOnWin: true,
+  advanceOnLoss: true,
+  amountField: null,
+  amountEntryMode: 'hybrid' as const,
+};
 const DEFAULT_AUTO_TRADE = {
   enabled: false,
   dryRun: true,
   useCanvas: true,
-  clickEngine: 'debugger' as const,
+  clickEngine: 'native' as const,
   canvas: {
     higherXPercent: 88,
     higherYPercent: 72,
@@ -96,8 +110,9 @@ function basePreset(expiry: TradeExpirySec): Omit<AppSettings, 'devLogWs'> {
       stochastic: { kPeriod: 8, ...DEFAULT_STOCH },
       adx: DEFAULT_ADX,
       bollinger: { period: 14, deviation: 2.0, bandProximityPct: 0.5 },
-      ema: DEFAULT_EMA,
+      movingAverage: DEFAULT_MOVING_AVERAGE,
       autoTrade: DEFAULT_AUTO_TRADE,
+      progression: { ...DEFAULT_PROGRESSION },
       market: {
         tradeExpirySec: 5 as const,
         candleIntervalSec: 5,
@@ -109,8 +124,9 @@ function basePreset(expiry: TradeExpirySec): Omit<AppSettings, 'devLogWs'> {
       stochastic: { kPeriod: 10, ...DEFAULT_STOCH },
       adx: DEFAULT_ADX,
       bollinger: { period: 14, deviation: 2.0, bandProximityPct: 0.5 },
-      ema: DEFAULT_EMA,
+      movingAverage: DEFAULT_MOVING_AVERAGE,
       autoTrade: DEFAULT_AUTO_TRADE,
+      progression: { ...DEFAULT_PROGRESSION },
       market: {
         tradeExpirySec: 10 as const,
         candleIntervalSec: 10,
@@ -122,8 +138,9 @@ function basePreset(expiry: TradeExpirySec): Omit<AppSettings, 'devLogWs'> {
       stochastic: { kPeriod: 12, ...DEFAULT_STOCH },
       adx: DEFAULT_ADX,
       bollinger: { period: 16, deviation: 2.0, bandProximityPct: 0.5 },
-      ema: DEFAULT_EMA,
+      movingAverage: DEFAULT_MOVING_AVERAGE,
       autoTrade: DEFAULT_AUTO_TRADE,
+      progression: { ...DEFAULT_PROGRESSION },
       market: {
         tradeExpirySec: 15 as const,
         candleIntervalSec: 15,
@@ -136,8 +153,9 @@ function basePreset(expiry: TradeExpirySec): Omit<AppSettings, 'devLogWs'> {
       stochastic: { kPeriod: 14, ...DEFAULT_STOCH },
       adx: DEFAULT_ADX,
       bollinger: { period: 20, deviation: 2.0, bandProximityPct: 0.5 },
-      ema: DEFAULT_EMA,
+      movingAverage: DEFAULT_MOVING_AVERAGE,
       autoTrade: DEFAULT_AUTO_TRADE,
+      progression: { ...DEFAULT_PROGRESSION },
       market: {
         tradeExpirySec: 30 as const,
         candleIntervalSec: 30,

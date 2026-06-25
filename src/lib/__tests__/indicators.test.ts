@@ -78,8 +78,11 @@ function baseSnapshot(
     barsSinceBullishCross: 1,
     barsSinceBearishCross: null,
     warmedUp: true,
-    warmupRequired: 15,
-    warmupCurrent: 20,
+    warmupRequired: 21,
+    warmupCurrent: 25,
+    maFast: 100,
+    maSlow: 99,
+    maTrend: 'up',
     ...overrides,
   };
 }
@@ -96,10 +99,10 @@ describe('evaluateSignal threshold scoring', () => {
       adx,
     );
     expect(result.signal).toBe('HIGHER');
-    expect(result.dualConfidence.higher.total).toBe(100);
+    expect(result.dualConfidence.higher.total).toBe(110);
   });
 
-  it('returns HIGHER at 95% when bollinger touch fails', () => {
+  it('returns HIGHER at 100% when bollinger touch fails but MA aligns', () => {
     const result = evaluateSignal(
       baseSnapshot({ price: 102, bbLower: 95 }),
       bullishPattern,
@@ -108,7 +111,7 @@ describe('evaluateSignal threshold scoring', () => {
       adx,
     );
     expect(result.signal).toBe('HIGHER');
-    expect(result.dualConfidence.higher.total).toBe(95);
+    expect(result.dualConfidence.higher.total).toBe(100);
     expect(result.activeCheck.bollinger).toBe(false);
   });
 
@@ -122,6 +125,9 @@ describe('evaluateSignal threshold scoring', () => {
         bearishCrossValid: true,
         barsSinceBullishCross: null,
         barsSinceBearishCross: 0,
+        maTrend: 'down',
+        maFast: 99,
+        maSlow: 100,
       }),
       bearishPattern,
       { bullishRejection: false, bearishRejection: true },
@@ -129,12 +135,12 @@ describe('evaluateSignal threshold scoring', () => {
       adx,
     );
     expect(result.signal).toBe('LOWER');
-    expect(result.dualConfidence.lower.total).toBe(100);
+    expect(result.dualConfidence.lower.total).toBe(110);
   });
 
   it('returns WAIT when dominant side is below threshold', () => {
     const result = evaluateSignal(
-      baseSnapshot({ rsi: 50, price: 102, bbLower: 95 }),
+      baseSnapshot({ rsi: 50, price: 102, bbLower: 95, maTrend: 'neutral' }),
       nonePattern,
       noWick,
       DEFAULT_SETTINGS,
@@ -144,7 +150,7 @@ describe('evaluateSignal threshold scoring', () => {
     expect(result.dualConfidence.higher.total).toBe(30);
   });
 
-  it('fires HIGHER at 75% without engulfing when wick and BB contribute', () => {
+  it('fires HIGHER at 90% without engulfing when wick, BB, and MA contribute', () => {
     const result = evaluateSignal(
       baseSnapshot(),
       nonePattern,
@@ -152,7 +158,7 @@ describe('evaluateSignal threshold scoring', () => {
       DEFAULT_SETTINGS,
       adx,
     );
-    expect(result.dualConfidence.higher.total).toBe(75);
+    expect(result.dualConfidence.higher.total).toBe(90);
     expect(result.signal).toBe('HIGHER');
     expect(result.dualConfidence.higher.candlePattern).toBe(0);
   });

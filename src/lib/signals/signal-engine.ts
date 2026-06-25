@@ -3,6 +3,7 @@ import type {
   ConfidenceScore,
   DualConfidence,
   IndicatorSnapshot,
+  MaTrend,
   PatternSnapshot,
   QualityChecklist,
   RawSignalEvaluation,
@@ -14,6 +15,8 @@ import type {
 import {
   bollingerTouchHigher,
   bollingerTouchLower,
+  maTrendAlignsHigher,
+  maTrendAlignsLower,
 } from '../indicators/indicator-engine';
 import { EMPTY_PATTERN } from '../patterns/candle-pattern-engine';
 import { EMPTY_WICK } from '../patterns/rejection-wick';
@@ -22,6 +25,27 @@ export interface AdxDebug {
   adx: number;
   plusDi: number;
   minusDi: number;
+}
+
+export const CONFIDENCE_WEIGHTS = {
+  rsi: 30,
+  stochastic: 30,
+  candlePattern: 20,
+  rejectionWick: 10,
+  bollinger: 10,
+  movingAverage: 10,
+} as const;
+
+export const MAX_RAW_CONFIDENCE =
+  CONFIDENCE_WEIGHTS.rsi +
+  CONFIDENCE_WEIGHTS.stochastic +
+  CONFIDENCE_WEIGHTS.candlePattern +
+  CONFIDENCE_WEIGHTS.rejectionWick +
+  CONFIDENCE_WEIGHTS.bollinger +
+  CONFIDENCE_WEIGHTS.movingAverage;
+
+export function displayConfidence(rawTotal: number): number {
+  return Math.min(100, rawTotal);
 }
 
 const emptyAdx = (): AdxDebug => ({ adx: 0, plusDi: 0, minusDi: 0 });
@@ -38,6 +62,7 @@ function higherChecklist(
     candlePattern: pattern.bullishEngulfing,
     bollinger: bollingerTouchHigher(indicators, settings),
     rejectionWick: wick.bullishRejection,
+    movingAverageTrend: maTrendAlignsHigher(indicators),
   };
 }
 
@@ -53,6 +78,7 @@ function lowerChecklist(
     candlePattern: pattern.bearishEngulfing,
     bollinger: bollingerTouchLower(indicators, settings),
     rejectionWick: wick.bearishRejection,
+    movingAverageTrend: maTrendAlignsLower(indicators),
   };
 }
 
@@ -61,18 +87,21 @@ function computeConfidence(
   check: QualityChecklist,
   pattern: PatternSnapshot,
 ): ConfidenceScore {
-  const rsi = check.rsi ? 25 : 0;
-  const stochastic = check.stochastic ? 30 : 0;
+  const rsi = check.rsi ? CONFIDENCE_WEIGHTS.rsi : 0;
+  const stochastic = check.stochastic ? CONFIDENCE_WEIGHTS.stochastic : 0;
   const candlePattern =
     direction === 'HIGHER'
       ? pattern.bullishEngulfing
-        ? 25
+        ? CONFIDENCE_WEIGHTS.candlePattern
         : 0
       : pattern.bearishEngulfing
-        ? 25
+        ? CONFIDENCE_WEIGHTS.candlePattern
         : 0;
-  const bollinger = check.bollinger ? 5 : 0;
-  const rejectionWick = check.rejectionWick ? 15 : 0;
+  const bollinger = check.bollinger ? CONFIDENCE_WEIGHTS.bollinger : 0;
+  const rejectionWick = check.rejectionWick ? CONFIDENCE_WEIGHTS.rejectionWick : 0;
+  const movingAverage = check.movingAverageTrend
+    ? CONFIDENCE_WEIGHTS.movingAverage
+    : 0;
 
   return {
     rsi,
@@ -80,7 +109,14 @@ function computeConfidence(
     candlePattern,
     bollinger,
     rejectionWick,
-    total: rsi + stochastic + candlePattern + bollinger + rejectionWick,
+    movingAverage,
+    total:
+      rsi +
+      stochastic +
+      candlePattern +
+      bollinger +
+      rejectionWick +
+      movingAverage,
   };
 }
 
@@ -187,9 +223,9 @@ export function buildSignalDebug(
     if (!indicators.warmedUp) {
       reason = `Warming up (${indicators.warmupCurrent}/${indicators.warmupRequired} bars)`;
     } else if (signal === 'HIGHER') {
-      reason = `HIGHER ${dual.higher.total}% ≥ ${settings.market.minimumSignalConfidence}% threshold`;
+      reason = `HIGHER ${displayConfidence(dual.higher.total)}% ≥ ${settings.market.minimumSignalConfidence}% threshold`;
     } else if (signal === 'LOWER') {
-      reason = `LOWER ${dual.lower.total}% ≥ ${settings.market.minimumSignalConfidence}% threshold`;
+      reason = `LOWER ${displayConfidence(dual.lower.total)}% ≥ ${settings.market.minimumSignalConfidence}% threshold`;
     } else {
       const resolved = resolveSignal(
         dual.higher.total,
@@ -217,6 +253,7 @@ export function buildSignalDebug(
     lowerChecklist: lower,
     higherConfidence: dual.higher,
     lowerConfidence: dual.lower,
+    maTrend: indicators.maTrend,
     signal,
     reason,
   };
@@ -279,3 +316,9 @@ export function evaluateSignal(
 }
 
 export { EMPTY_PATTERN, EMPTY_WICK };
+
+export function maTrendLabel(trend: MaTrend): string {
+  if (trend === 'up') return '✓ Trend Up';
+  if (trend === 'down') return '✓ Trend Down';
+  return '✕ Neutral';
+}

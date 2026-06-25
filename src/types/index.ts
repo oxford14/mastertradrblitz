@@ -29,10 +29,14 @@ export interface RsiSettings {
   requireExtreme: boolean;
 }
 
-export interface EmaSettings {
+export type MaType = 'ema' | 'sma';
+
+export type MaTrend = 'up' | 'down' | 'neutral';
+
+export interface MovingAverageSettings {
   fastPeriod: number;
   slowPeriod: number;
-  enabled: boolean;
+  type: MaType;
 }
 
 export interface StochasticSettings {
@@ -78,7 +82,7 @@ export interface AutoTradeCanvasSettings {
   lowerYPercent: number;
 }
 
-export type AutoTradeClickEngine = 'debugger' | 'native' | 'synthetic';
+export type AutoTradeClickEngine = 'native';
 
 export interface AutoTradeSettings {
   enabled: boolean;
@@ -86,6 +90,61 @@ export interface AutoTradeSettings {
   useCanvas: boolean;
   clickEngine: AutoTradeClickEngine;
   canvas: AutoTradeCanvasSettings;
+}
+
+export type ProgressionProfileId =
+  | 'D50'
+  | 'D100'
+  | 'D200'
+  | 'D300'
+  | 'D500'
+  | 'D1000'
+  | 'AD50'
+  | 'AD100'
+  | 'AD200'
+  | 'AD300'
+  | 'AD500'
+  | 'AD1000'
+  | 'Custom';
+
+export type ProgressionMaxLevel = 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+
+export interface AmountFieldCalibration {
+  screenX: number;
+  screenY: number;
+  clientX: number;
+  clientY: number;
+  width: number;
+  height: number;
+  calibratedAt: number;
+}
+
+export type AmountEntryMode = 'hybrid' | 'keypad';
+
+export interface ProgressionSettings {
+  enabled: boolean;
+  profileId: ProgressionProfileId;
+  customLevels: number[];
+  maxLevel: ProgressionMaxLevel;
+  resetOnWin: boolean;
+  advanceOnLoss: boolean;
+  amountField: AmountFieldCalibration | null;
+  amountEntryMode: AmountEntryMode;
+}
+
+export interface ProgressionStateData {
+  currentLevel: number;
+  stopped: boolean;
+  lastAppliedStake: number;
+  lastWarning: string | null;
+}
+
+export interface ProgressionSnapshot {
+  profileId: ProgressionProfileId;
+  level: number;
+  stake: number;
+  stopped: boolean;
+  lastWarning: string | null;
 }
 
 export interface ProbeResult {
@@ -113,9 +172,10 @@ export interface AppSettings {
   stochastic: StochasticSettings;
   adx: AdxSettings;
   bollinger: BollingerSettings;
-  ema: EmaSettings;
+  movingAverage: MovingAverageSettings;
   market: MarketSettings;
   autoTrade: AutoTradeSettings;
+  progression: ProgressionSettings;
   devLogWs: boolean;
 }
 
@@ -128,6 +188,42 @@ export interface AutoTradeStatus {
   signal: Signal;
   message: string;
   at: number;
+}
+
+export type TradeOutcome = 'win' | 'loss';
+
+export interface TradeCloseEvent {
+  id: string;
+  profit: number;
+  outcome: TradeOutcome;
+  closedAt: number;
+  direction: TradeDirection;
+  instrumentType?: string;
+}
+
+export interface PendingAutoTrade {
+  placedAt: number;
+  signal: 'HIGHER' | 'LOWER';
+  expirySec: number;
+}
+
+export interface AutoTradeStatsSnapshot {
+  wins: number;
+  losses: number;
+  pendingCount: number;
+  longestWinStreak: number;
+  longestLossStreak: number;
+}
+
+export interface AutoTradeStatsData {
+  wins: number;
+  losses: number;
+  pending: PendingAutoTrade[];
+  seenCloseIds: string[];
+  currentWinStreak: number;
+  currentLossStreak: number;
+  longestWinStreak: number;
+  longestLossStreak: number;
 }
 
 export type CandlePatternName =
@@ -152,6 +248,8 @@ export interface ConfidenceScore {
   candlePattern: number;
   bollinger: number;
   rejectionWick: number;
+  movingAverage: number;
+  /** Raw sum (may exceed 100); use displayConfidence for UI */
   total: number;
 }
 
@@ -161,6 +259,7 @@ export interface QualityChecklist {
   candlePattern: boolean;
   bollinger: boolean;
   rejectionWick: boolean;
+  movingAverageTrend: boolean;
 }
 
 export interface DualConfidence {
@@ -185,6 +284,7 @@ export interface SignalDebug {
   lowerChecklist: QualityChecklist;
   higherConfidence: ConfidenceScore;
   lowerConfidence: ConfidenceScore;
+  maTrend: MaTrend;
   signal: Signal;
   reason: string;
 }
@@ -208,6 +308,9 @@ export interface IndicatorSnapshot {
   warmedUp: boolean;
   warmupRequired: number;
   warmupCurrent: number;
+  maFast: number;
+  maSlow: number;
+  maTrend: MaTrend;
 }
 
 export interface RawSignalEvaluation {

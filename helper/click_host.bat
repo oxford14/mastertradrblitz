@@ -1,2 +1,2 @@
 @echo off
-python "%~dp0click_host.py"
+"%~dp0vb\MtbClickHelper\bin\Release\MtbClickHelper.exe" --host

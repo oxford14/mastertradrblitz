@@ -1,10 +1,14 @@
 import type {
   AppSettings,
+  MaType,
   MinimumSignalConfidence,
   MinimumSignalEdge,
+  ProgressionMaxLevel,
+  ProgressionProfileId,
   TradeExpirySec,
 } from '../../types';
 import { getPreset, isTradeExpirySec } from './presets';
+import { DEFAULT_CUSTOM_LEVELS, isProgressionProfileId } from '../progression/tables';
 
 export const DEFAULT_SETTINGS: AppSettings = getPreset(5);
 
@@ -46,11 +50,20 @@ export function validateSettings(settings: AppSettings): AppSettings {
       deviation: clamp(settings.bollinger.deviation, 0.1, 5),
       bandProximityPct: clamp(settings.bollinger.bandProximityPct, 0, 5),
     },
-    ema: {
-      fastPeriod: clamp(Math.round(settings.ema?.fastPeriod ?? 20), 2, 200),
-      slowPeriod: clamp(Math.round(settings.ema?.slowPeriod ?? 50), 2, 200),
-      enabled: settings.ema?.enabled ?? false,
-    },
+    movingAverage: (() => {
+      const legacy = (
+        settings as AppSettings & {
+          ema?: { fastPeriod?: number; slowPeriod?: number };
+        }
+      ).ema;
+      const ma = settings.movingAverage ?? legacy;
+      const type: MaType = ma && 'type' in ma && ma.type === 'sma' ? 'sma' : 'ema';
+      return {
+        fastPeriod: clamp(Math.round(ma?.fastPeriod ?? 9), 2, 200),
+        slowPeriod: clamp(Math.round(ma?.slowPeriod ?? 21), 2, 200),
+        type,
+      };
+    })(),
     adx: {
       period: clamp(Math.round(settings.adx?.period ?? 14), 2, 100),
       threshold: clamp(settings.adx?.threshold ?? 20, 5, 100),
@@ -80,11 +93,7 @@ export function validateSettings(settings: AppSettings): AppSettings {
       enabled: settings.autoTrade?.enabled ?? false,
       dryRun: settings.autoTrade?.dryRun ?? true,
       useCanvas: settings.autoTrade?.useCanvas ?? true,
-      clickEngine:
-        settings.autoTrade?.clickEngine === 'native' ||
-        settings.autoTrade?.clickEngine === 'synthetic'
-          ? settings.autoTrade.clickEngine
-          : 'debugger',
+      clickEngine: 'native',
       canvas: {
         higherXPercent: clamp(
           Number(settings.autoTrade?.canvas?.higherXPercent ?? 88),
@@ -108,6 +117,52 @@ export function validateSettings(settings: AppSettings): AppSettings {
         ),
       },
     },
+    progression: (() => {
+      const p = settings.progression;
+      const profileId: ProgressionProfileId = isProgressionProfileId(
+        String(p?.profileId ?? ''),
+      )
+        ? (p!.profileId as ProgressionProfileId)
+        : 'D200';
+      const maxLevels: ProgressionMaxLevel[] = [3, 4, 5, 6, 7, 8, 9, 10];
+      const maxLevel: ProgressionMaxLevel = maxLevels.includes(
+        p?.maxLevel as ProgressionMaxLevel,
+      )
+        ? (p!.maxLevel as ProgressionMaxLevel)
+        : 10;
+      const customRaw = Array.isArray(p?.customLevels) ? p!.customLevels : [];
+      const customLevels = Array.from({ length: 10 }, (_, i) => {
+        const v = Number(customRaw[i] ?? DEFAULT_CUSTOM_LEVELS[i]);
+        return Number.isFinite(v) && v > 0 ? Math.round(v) : DEFAULT_CUSTOM_LEVELS[i];
+      });
+      const field = p?.amountField;
+      const amountField =
+        field &&
+        Number.isFinite(field.screenX) &&
+        Number.isFinite(field.screenY) &&
+        Number.isFinite(field.clientX) &&
+        Number.isFinite(field.clientY)
+          ? {
+              screenX: Math.round(field.screenX),
+              screenY: Math.round(field.screenY),
+              clientX: Math.round(field.clientX),
+              clientY: Math.round(field.clientY),
+              width: clamp(Math.round(field.width ?? 120), 20, 400),
+              height: clamp(Math.round(field.height ?? 32), 16, 120),
+              calibratedAt: Number(field.calibratedAt) || Date.now(),
+            }
+          : null;
+      return {
+        enabled: p?.enabled ?? false,
+        profileId,
+        customLevels,
+        maxLevel,
+        resetOnWin: p?.resetOnWin ?? true,
+        advanceOnLoss: p?.advanceOnLoss ?? true,
+        amountField,
+        amountEntryMode: p?.amountEntryMode === 'keypad' ? 'keypad' : 'hybrid',
+      };
+    })(),
     devLogWs: settings.devLogWs,
   };
 }

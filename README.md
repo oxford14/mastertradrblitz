@@ -1,6 +1,6 @@
 # Master Trader Blitz
 
-Chrome Extension (MV3) for [trade.exnova.com](https://trade.exnova.com) that generates **HIGHER**, **LOWER**, or **WAIT** signals using dual-confidence scoring from RSI, Stochastic, engulfing patterns, Bollinger touch, and rejection wicks.
+Chrome Extension (MV3) for [trade.exnova.com](https://trade.exnova.com) that generates **HIGHER**, **LOWER**, or **WAIT** signals using dual-confidence scoring from RSI, Stochastic, engulfing patterns, Bollinger touch, rejection wicks, and moving average trend bias.
 
 ## Features
 
@@ -9,21 +9,23 @@ Chrome Extension (MV3) for [trade.exnova.com](https://trade.exnova.com) that gen
 - **Trader-first overlay:** dual HIGHER/LOWER confidence %, hero signal, Requirements checklist
 - **Threshold-based entries:** configurable minimum confidence (50–90%, default 70%)
 - **Edge rule:** when both sides exceed threshold, minimum edge gap (3/5/10%, default 5%) picks the winner
+- **Moving average trend bias:** configurable Fast/Slow EMA or SMA adds up to +10 confidence when aligned
 - Collapsible **Advanced** panel for raw values and score breakdown
 - **Optional auto-click** on Exnova HIGHER/LOWER (dry-run by default)
 - Trade expiry presets: **5s, 10s, 15s, 30s**
 
 ## Signal formulas
 
-Each side scores independently (0–100):
+Each side scores independently (raw total up to 110; display capped at 100%):
 
 | Evidence | HIGHER | LOWER | Points |
 |----------|--------|-------|--------|
-| RSI extreme | ≤ oversold | ≥ overbought | 25 |
+| RSI extreme | ≤ oversold | ≥ overbought | 30 |
 | Stochastic cross | Cross up | Cross down | 30 |
-| Engulfing pattern | Bullish | Bearish | 25 |
-| Bollinger touch | Near lower band | Near upper band | 5 |
-| Rejection wick | Bullish | Bearish | 15 |
+| Engulfing pattern | Bullish | Bearish | 20 |
+| Bollinger touch | Near lower band | Near upper band | 10 |
+| Rejection wick | Bullish | Bearish | 10 |
+| MA trend | Fast > Slow | Fast < Slow | 10 |
 
 **Signal rules:**
 
@@ -52,7 +54,7 @@ Exnova **ignores synthetic JavaScript clicks** (`event.isTrusted === false`). Th
 | Engine | Separate app? | Notes |
 |--------|---------------|-------|
 | **Chrome debugger** (default) | No | Real mouse events via CDP. Chrome shows a short automation banner. |
-| **Native helper** | Yes (Python) | OS-level clicks — see [`helper/README.md`](helper/README.md) |
+| **Native helper** | Yes (VB.NET) | Draggable calibrator + OS clicks — see [`helper/README.md`](helper/README.md) |
 | **Synthetic** | No | Legacy DOM/canvas dispatch — usually does not register on Exnova |
 
 ### Setup
@@ -64,7 +66,12 @@ Exnova **ignores synthetic JavaScript clicks** (`event.isTrusted === false`). Th
 5. **Test HIGHER click** (dry run off) — should place a trade or show debugger error.
 6. Disable dry run for live auto-trade only after test succeeds.
 
-The extension finds Exnova **HIGHER/LOWER DOM buttons** on the right panel when possible; otherwise it falls back to **#glcanvas** coordinates (adjust X/Y % in Options).
+### Native helper (VB calibrator)
+
+1. Build: `helper\build-helper.ps1`
+2. Install: `helper\install-native-helper.ps1`
+3. Calibrate: `helper\run-calibrator.bat` — drag HIGHER/LOWER markers, Save
+4. Options → **Native helper** → Ping → Test click
 
 Guards: warmup required, one click per confirmed signal, respects signal cooldown.
 

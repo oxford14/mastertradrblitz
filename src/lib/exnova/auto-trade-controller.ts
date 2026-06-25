@@ -23,9 +23,12 @@ export class AutoTradeController {
     return this.status;
   }
 
-  async onTradeConfirmed(signal: Signal, warmedUp: boolean): Promise<void> {
-    if (signal !== 'HIGHER' && signal !== 'LOWER') return;
-    if (!this.settings?.autoTrade.enabled) return;
+  async onTradeConfirmed(
+    signal: Signal,
+    warmedUp: boolean,
+  ): Promise<AutoTradeStatus> {
+    if (signal !== 'HIGHER' && signal !== 'LOWER') return this.status;
+    if (!this.settings?.autoTrade.enabled) return this.status;
 
     const { dryRun } = this.settings.autoTrade;
 
@@ -36,7 +39,7 @@ export class AutoTradeController {
         message: 'Skipped — indicators still warming up',
         at: Date.now(),
       };
-      return;
+      return this.status;
     }
 
     const result = await executeTrade(signal, dryRun, this.settings.autoTrade, document);
@@ -46,6 +49,7 @@ export class AutoTradeController {
       message: result.message,
       at: Date.now(),
     };
+    return this.status;
   }
 
   probeButtons(): ProbeResult {

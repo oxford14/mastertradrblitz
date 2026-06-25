@@ -25,3 +25,7 @@ dist-ssr
 
 # Generated native messaging manifest (run helper/install-native-helper.ps1)
 helper/com.mastertraderblitz.click.json
+
+# VB build output
+helper/vb/**/bin/
+helper/vb/**/obj/

@@ -1,4 +1,4 @@
-import type { AppSettings, Candle, IndicatorSnapshot } from '../../types';
+import type { AppSettings, Candle, IndicatorSnapshot, MaTrend } from '../../types';
 import { RSI } from './rsi';
 import { StochasticOscillator } from './stochastic';
 import {
@@ -6,13 +6,30 @@ import {
   isNearLowerBand,
   isNearUpperBand,
 } from './bollinger';
+import { computeEma } from './ema';
+import { computeSma } from './sma';
+
+function computeMa(
+  closes: readonly number[],
+  period: number,
+  type: AppSettings['movingAverage']['type'],
+): number {
+  return type === 'sma' ? computeSma(closes, period) : computeEma(closes, period);
+}
+
+function resolveMaTrend(fast: number, slow: number): MaTrend {
+  if (fast > slow) return 'up';
+  if (fast < slow) return 'down';
+  return 'neutral';
+}
 
 export function warmupRequired(settings: AppSettings): number {
-  const { rsi, stochastic, bollinger } = settings;
+  const { rsi, stochastic, bollinger, movingAverage } = settings;
   return Math.max(
     rsi.period + 1,
     stochastic.kPeriod + stochastic.smoothing + stochastic.dPeriod,
     bollinger.period,
+    movingAverage.slowPeriod,
   );
 }
 
@@ -37,7 +54,10 @@ export class IndicatorEngine {
       settings.rsi.period !== this.settings.rsi.period ||
       settings.stochastic.kPeriod !== this.settings.stochastic.kPeriod ||
       settings.stochastic.dPeriod !== this.settings.stochastic.dPeriod ||
-      settings.stochastic.smoothing !== this.settings.stochastic.smoothing;
+      settings.stochastic.smoothing !== this.settings.stochastic.smoothing ||
+      settings.movingAverage.fastPeriod !== this.settings.movingAverage.fastPeriod ||
+      settings.movingAverage.slowPeriod !== this.settings.movingAverage.slowPeriod ||
+      settings.movingAverage.type !== this.settings.movingAverage.type;
 
     this.settings = settings;
     if (needsReset) {
@@ -116,6 +136,11 @@ export class IndicatorEngine {
       this.settings.bollinger.deviation,
     );
 
+    const { fastPeriod, slowPeriod, type } = this.settings.movingAverage;
+    const maFast = computeMa(closes, fastPeriod, type);
+    const maSlow = computeMa(closes, slowPeriod, type);
+    const maTrend = resolveMaTrend(maFast, maSlow);
+
     const warmedUp = count >= required;
     const snapshot: IndicatorSnapshot = {
       rsi: rsiVal,
@@ -136,6 +161,9 @@ export class IndicatorEngine {
       warmedUp,
       warmupRequired: required,
       warmupCurrent: count,
+      maFast,
+      maSlow,
+      maTrend,
     };
 
     this.lastSnapshot = snapshot;
@@ -170,6 +198,9 @@ export class IndicatorEngine {
       warmedUp: false,
       warmupRequired: required,
       warmupCurrent: current,
+      maFast: price,
+      maSlow: price,
+      maTrend: 'neutral',
     };
   }
 }
@@ -194,4 +225,12 @@ export function bollingerTouchLower(
     indicators.bbUpper,
     settings.bollinger.bandProximityPct,
   );
+}
+
+export function maTrendAlignsHigher(indicators: IndicatorSnapshot): boolean {
+  return indicators.maTrend === 'up';
+}
+
+export function maTrendAlignsLower(indicators: IndicatorSnapshot): boolean {
+  return indicators.maTrend === 'down';
 }

@@ -24,8 +24,11 @@ function snapshot(
     barsSinceBullishCross: 1,
     barsSinceBearishCross: null,
     warmedUp: true,
-    warmupRequired: 15,
-    warmupCurrent: 20,
+    warmupRequired: 21,
+    warmupCurrent: 25,
+    maFast: 100,
+    maSlow: 99,
+    maTrend: 'up',
     ...overrides,
   };
 }
@@ -55,27 +58,27 @@ describe('quality checklist and dual confidence', () => {
       adx,
     );
     expect(higher.signal).toBe('HIGHER');
-    expect(higher.dualConfidence.higher.total).toBe(100);
+    expect(higher.dualConfidence.higher.total).toBe(110);
     expect(higher.debug.higherChecklist.bollinger).toBe(true);
     expect(higher.debug.higherChecklist.rejectionWick).toBe(true);
+    expect(higher.debug.higherChecklist.movingAverageTrend).toBe(true);
   });
 
-  it('scores partial higher confidence without engulfing and stays WAIT at 70%', () => {
-    const wait = evaluateSignal(
-      snapshot(),
+  it('fires HIGHER at 70% with RSI, stoch, and BB without engulfing', () => {
+    const result = evaluateSignal(
+      snapshot({ maTrend: 'neutral', maFast: 100, maSlow: 100 }),
       nonePattern,
       EMPTY_WICK,
       DEFAULT_SETTINGS,
       adx,
     );
-    expect(wait.signal).toBe('WAIT');
-    expect(wait.dualConfidence.higher.total).toBe(60);
-    expect(wait.debug.reason).toContain('No side above threshold');
+    expect(result.signal).toBe('HIGHER');
+    expect(result.dualConfidence.higher.total).toBe(70);
   });
 
   it('reports dominant side checklist when below threshold', () => {
     const result = evaluateSignal(
-      snapshot({ rsi: 50, price: 102, bbLower: 95 }),
+      snapshot({ rsi: 50, price: 102, bbLower: 95, maTrend: 'neutral' }),
       nonePattern,
       EMPTY_WICK,
       DEFAULT_SETTINGS,

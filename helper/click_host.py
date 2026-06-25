@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native messaging host — OS-level mouse clicks for Master Trader Blitz."""
+"""DEPRECATED: Use helper/vb/MtbClickHelper (VB.NET) instead."""
 
 from __future__ import annotations
 

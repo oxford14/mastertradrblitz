@@ -8,7 +8,8 @@ import {
 } from '../lib/settings/presets';
 import { loadSettings, saveSettings } from '../lib/settings/storage';
 import { findExnovaTab } from '../lib/exnova/find-exnova-tab';
-import type { AppSettings } from '../types';
+import { PROGRESSION_PROFILE_IDS } from '../lib/progression/tables';
+import type { AppSettings, ProgressionMaxLevel } from '../types';
 import { ExnovaGuideCard } from './ExnovaGuideCard';
 
 function NumField({
@@ -18,6 +19,7 @@ function NumField({
   min,
   max,
   step = 1,
+  disabled,
 }: {
   label: string;
   value: number;
@@ -25,6 +27,7 @@ function NumField({
   min?: number;
   max?: number;
   step?: number;
+  disabled?: boolean;
 }) {
   return (
     <label className="opt-field">
@@ -35,6 +38,7 @@ function NumField({
         min={min}
         max={max}
         step={step}
+        disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
       />
     </label>
@@ -83,6 +87,22 @@ export function OptionsApp() {
     setSaved(false);
   };
 
+  const handleResetAutoStats = async () => {
+    setProbeResult(null);
+    try {
+      const tab = await findExnovaTab();
+      if (!tab?.id) {
+        setProbeResult('No Exnova tab found — open trade.exnova.com first.');
+        return;
+      }
+      await chrome.tabs.sendMessage(tab.id, { type: 'mtb-reset-auto-stats' });
+      setProbeResult('Session W/L counter reset.');
+    } catch {
+      setProbeResult('Reset failed — refresh the Exnova tab.');
+    }
+    setTimeout(() => setProbeResult(null), 4000);
+  };
+
   const handleProbeButtons = async () => {
     setProbeResult(null);
     try {
@@ -111,17 +131,13 @@ export function OptionsApp() {
     setTimeout(() => setProbeResult(null), 5000);
   };
 
-  const handleTestClick = async () => {
+  const handleTestClick = async (signal: 'HIGHER' | 'LOWER' = 'HIGHER') => {
     setProbeResult(null);
     try {
-      const tab = await findExnovaTab();
-      if (!tab?.id) {
-        setProbeResult('No Exnova tab found.');
-        return;
-      }
-      const result = (await chrome.tabs.sendMessage(tab.id, {
-        type: 'mtb-test-click',
-        signal: 'HIGHER',
+      const result = (await chrome.runtime.sendMessage({
+        type: 'mtb-trusted-click',
+        engine: 'native',
+        signal,
       })) as { ok: boolean; message: string };
       setProbeResult(result.message);
     } catch {
@@ -130,17 +146,76 @@ export function OptionsApp() {
     setTimeout(() => setProbeResult(null), 6000);
   };
 
+  const sendExnovaMessage = async (
+    type: string,
+  ): Promise<{ ok: boolean; message?: string } | undefined> => {
+    const tab = await findExnovaTab();
+    if (!tab?.id) {
+      setProbeResult('No Exnova tab found — open trade.exnova.com first.');
+      return undefined;
+    }
+    return (await chrome.tabs.sendMessage(tab.id, { type })) as {
+      ok: boolean;
+      message?: string;
+    };
+  };
+
+  const handleTestProgressionAmount = async () => {
+    setProbeResult(null);
+    try {
+      const result = await sendExnovaMessage('mtb-test-progression-amount');
+      setProbeResult(result?.message ?? (result?.ok ? 'Amount update sent.' : 'Test failed.'));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      setProbeResult(
+        msg.includes('Receiving end does not exist')
+          ? 'Exnova tab not connected — open trade.exnova.com and refresh the tab, then reload the extension from dist/.'
+          : 'Test amount failed — refresh the Exnova tab.',
+      );
+    }
+    setTimeout(() => setProbeResult(null), 6000);
+  };
+
+  const handleResetProgression = async () => {
+    setProbeResult(null);
+    try {
+      const result = await sendExnovaMessage('mtb-reset-progression');
+      if (result?.ok) {
+        setProbeResult('Progression reset to Level 1.');
+      }
+    } catch {
+      setProbeResult('Reset failed — refresh the Exnova tab.');
+    }
+    setTimeout(() => setProbeResult(null), 4000);
+  };
+
   const handlePingHelper = async () => {
     setProbeResult(null);
     try {
       const result = (await chrome.runtime.sendMessage({
         type: 'mtb-click-helper-ping',
-      })) as { ok: boolean; message: string };
+      })) as {
+        ok: boolean;
+        message: string;
+        higher?: { x: number; y: number };
+        lower?: { x: number; y: number };
+        amount?: { x: number; y: number };
+        updatedAt?: string;
+      };
       if (result.ok) {
-        setProbeResult(`Native helper OK: ${result.message}`);
+        if (result.higher && result.lower) {
+          const amountLine = result.amount
+            ? `AMOUNT @ ${result.amount.x}, ${result.amount.y}`
+            : 'AMOUNT not calibrated — drag amber marker in calibrator';
+          setProbeResult(
+            `Native helper OK — HIGHER @ ${result.higher.x}, ${result.higher.y} · LOWER @ ${result.lower.x}, ${result.lower.y} · ${amountLine}`,
+          );
+        } else {
+          setProbeResult(`Native helper OK: ${result.message}`);
+        }
       } else if (result.message.includes('not found')) {
         setProbeResult(
-          `Native helper not registered. In PowerShell run: cd helper ; .\\install-native-helper.ps1 — then reload extension from dist/`,
+          'Native helper not registered. Build helper/vb/MtbClickHelper, then run helper\\install-native-helper.ps1 and reload extension from dist/.',
         );
       } else {
         setProbeResult(`Native helper: ${result.message}`);
@@ -353,30 +428,13 @@ export function OptionsApp() {
           />
           Dry run (log only, do not click)
         </label>
-        <label className="opt-field">
+        <p className="opt-field opt-field-static">
           <span>Click engine</span>
-          <select
-            value={settings.autoTrade.clickEngine}
-            disabled={!settings.autoTrade.enabled}
-            onChange={(e) =>
-              update({
-                autoTrade: {
-                  ...settings.autoTrade,
-                  clickEngine: e.target.value as AppSettings['autoTrade']['clickEngine'],
-                },
-              })
-            }
-          >
-            <option value="debugger">Chrome debugger (trusted, recommended)</option>
-            <option value="native">Native helper (OS-level clicks)</option>
-            <option value="synthetic">Synthetic (legacy — usually ignored by Exnova)</option>
-          </select>
-        </label>
+          <strong>Native helper (OS-level clicks)</strong>
+        </p>
         <p className="opt-hint">
-          Exnova ignores synthetic JavaScript clicks. Use <strong>Chrome debugger</strong> for
-          trusted clicks without a separate app (Chrome shows a short “controlled by automation”
-          banner). Use <strong>Native helper</strong> only if debugger is blocked — see{' '}
-          <code>helper/README.md</code>.
+          Auto-clicks use the VB native helper with calibrated screen coordinates.
+          Run the calibrator to drag HIGHER/LOWER markers onto Exnova buttons.
         </p>
         <label className="opt-checkbox">
           <input
@@ -468,6 +526,17 @@ export function OptionsApp() {
           first. Probe searches any open trade.exnova.com tab (Options page can
           stay open). Verify Exnova terms of use before enabling live clicks.
         </p>
+        <p className="opt-hint">
+          Session W/L counts auto-clicked Blitz trades only, detected via WebSocket
+          when positions close. Toggling Auto does not reset the counter.
+        </p>
+        <button
+          type="button"
+          className="opt-btn"
+          onClick={() => void handleResetAutoStats()}
+        >
+          Reset session W/L
+        </button>
         <button
           type="button"
           className="opt-btn"
@@ -479,24 +548,201 @@ export function OptionsApp() {
           type="button"
           className="opt-btn"
           disabled={!settings.autoTrade.enabled || settings.autoTrade.dryRun}
-          onClick={() => void handleTestClick()}
+          onClick={() => void handleTestClick('HIGHER')}
         >
-          Test HIGHER click on Exnova tab
+          Test HIGHER click
         </button>
-        {settings.autoTrade.clickEngine === 'native' && (
-          <>
-            <p className="opt-hint">
-              Extension ID: <code>{extensionId}</code>. Python alone is not enough — register the
-              native host once: open PowerShell in the project <code>helper</code> folder and run{' '}
-              <code>.\install-native-helper.ps1</code>, then reload this extension from{' '}
-              <code>dist/</code>.
-            </p>
-            <button type="button" className="opt-btn" onClick={() => void handlePingHelper()}>
-              Ping native helper
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          className="opt-btn"
+          disabled={!settings.autoTrade.enabled || settings.autoTrade.dryRun}
+          onClick={() => void handleTestClick('LOWER')}
+        >
+          Test LOWER click
+        </button>
+        <p className="opt-hint">
+          Extension ID: <code>{extensionId}</code>. Steps: (1) build{' '}
+          <code>helper/vb/MtbClickHelper</code>, (2) run{' '}
+          <code>helper\install-native-helper.ps1</code>, (3) run{' '}
+          <code>helper\run-calibrator.bat</code> (or double-click MtbClickHelper.exe), drag markers over Exnova HIGHER/LOWER/AMOUNT, Save, (4)
+          Ping below, (5) Test click with dry run off.
+        </p>
+        <button type="button" className="opt-btn" onClick={() => void handlePingHelper()}>
+          Ping native helper
+        </button>
         {probeResult && <p className="opt-toast">{probeResult}</p>}
+      </section>
+
+      <section className="opt-section">
+        <h2>Progression Manager</h2>
+        <label className="opt-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.progression.enabled}
+            onChange={(e) =>
+              update({
+                progression: {
+                  ...settings.progression,
+                  enabled: e.target.checked,
+                },
+              })
+            }
+          />
+          Enable progression manager
+        </label>
+        <label className="opt-field opt-field-select">
+          <span>Progression type</span>
+          <select
+            value={settings.progression.profileId}
+            disabled={!settings.progression.enabled}
+            onChange={(e) =>
+              update({
+                progression: {
+                  ...settings.progression,
+                  profileId: e.target.value as AppSettings['progression']['profileId'],
+                },
+              })
+            }
+          >
+            <optgroup label="Standard (D) — 82% payout">
+              {PROGRESSION_PROFILE_IDS.filter((id) => id.startsWith('D') && id !== 'Custom').map(
+                (id) => (
+                  <option key={id} value={id}>
+                    {id}
+                  </option>
+                ),
+              )}
+            </optgroup>
+            <optgroup label="Aggressive (AD) — 82% payout">
+              {PROGRESSION_PROFILE_IDS.filter((id) => id.startsWith('AD')).map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </optgroup>
+            <option value="Custom">Custom</option>
+          </select>
+        </label>
+        <p className="opt-hint">
+          D = standard double-profit progression. AD = aggressive double-profit progression (10
+          levels). Win resets to L1; loss advances one level.
+        </p>
+        {settings.progression.profileId === 'Custom' && (
+          <div className="opt-grid">
+            {settings.progression.customLevels.map((level, index) => (
+              <NumField
+                key={index}
+                label={`Level ${index + 1}`}
+                value={level}
+                min={1}
+                disabled={!settings.progression.enabled}
+                onChange={(v) => {
+                  const customLevels = [...settings.progression.customLevels];
+                  customLevels[index] = v;
+                  update({
+                    progression: { ...settings.progression, customLevels },
+                  });
+                }}
+              />
+            ))}
+          </div>
+        )}
+        <label className="opt-field opt-field-select">
+          <span>Maximum progression level</span>
+          <select
+            value={settings.progression.maxLevel}
+            disabled={!settings.progression.enabled}
+            onChange={(e) =>
+              update({
+                progression: {
+                  ...settings.progression,
+                  maxLevel: Number(e.target.value) as ProgressionMaxLevel,
+                },
+              })
+            }
+          >
+            {([3, 4, 5, 6, 7, 8, 9, 10] as const).map((level) => (
+              <option key={level} value={level}>
+                L{level}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="opt-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.progression.resetOnWin}
+            disabled={!settings.progression.enabled}
+            onChange={(e) =>
+              update({
+                progression: {
+                  ...settings.progression,
+                  resetOnWin: e.target.checked,
+                },
+              })
+            }
+          />
+          Auto reset after win
+        </label>
+        <label className="opt-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.progression.advanceOnLoss}
+            disabled={!settings.progression.enabled}
+            onChange={(e) =>
+              update({
+                progression: {
+                  ...settings.progression,
+                  advanceOnLoss: e.target.checked,
+                },
+              })
+            }
+          />
+          Auto advance after loss
+        </label>
+        <label className="opt-field opt-field-select">
+          <span>Amount entry mode</span>
+          <select
+            value={settings.progression.amountEntryMode}
+            disabled={!settings.progression.enabled}
+            onChange={(e) =>
+              update({
+                progression: {
+                  ...settings.progression,
+                  amountEntryMode: e.target.value as AppSettings['progression']['amountEntryMode'],
+                },
+              })
+            }
+          >
+            <option value="hybrid">Hybrid (click + Python paste)</option>
+            <option value="keypad">Keypad clicks (mouse only)</option>
+          </select>
+        </label>
+        <p className="opt-hint">
+          Progression only reacts to auto-clicked trades detected via WebSocket when
+          positions close. Hybrid mode clicks AMOUNT, then pastes the stake with Python (Ctrl+V).
+        </p>
+        <p className="opt-hint">
+          One-time setup (from project root): <code>pip install -r helper\requirements.txt</code>
+          {' '}— or from <code>helper\</code>: <code>pip install -r requirements.txt</code>. Then run{' '}
+          <code>helper\run-calibrator.bat</code> for HIGHER, LOWER, AMOUNT. Manual paste test:{' '}
+          <code>helper\run-paste-test.bat 488</code>
+        </p>
+        <button
+          type="button"
+          className="opt-btn"
+          disabled={!settings.progression.enabled}
+          onClick={() => void handleTestProgressionAmount()}
+        >
+          Test amount update
+        </button>
+        <button
+          type="button"
+          className="opt-btn"
+          onClick={() => void handleResetProgression()}
+        >
+          Reset progression
+        </button>
       </section>
 
       <section className="opt-section">
@@ -540,7 +786,7 @@ export function OptionsApp() {
         </div>
         <p className="opt-hint">
           Hold: wait before confirming HIGHER/LOWER (0 = instant). Cooldown:
-          keep signal visible before accepting a new one.
+          minimum time before another auto-click, even if the same signal stays on.
         </p>
         <label className="opt-checkbox">
           <input
@@ -568,10 +814,60 @@ export function OptionsApp() {
       </section>
 
       <section className="opt-section opt-section-muted">
-        <h2>Advanced filters (disabled)</h2>
+        <h2>Moving Average</h2>
         <p className="opt-hint">
-          Bollinger and rejection wick contribute to confidence scoring. ADX and
-          EMA settings are kept for future use.
+          Trend filter adds up to +10 confidence when aligned. Match your Exnova
+          cyan/purple MA settings for trend alignment.
+        </p>
+        <div className="opt-grid">
+          <NumField
+            label="Fast MA Period"
+            value={settings.movingAverage.fastPeriod}
+            min={2}
+            max={200}
+            onChange={(v) =>
+              update({
+                movingAverage: { ...settings.movingAverage, fastPeriod: v },
+              })
+            }
+          />
+          <NumField
+            label="Slow MA Period"
+            value={settings.movingAverage.slowPeriod}
+            min={2}
+            max={200}
+            onChange={(v) =>
+              update({
+                movingAverage: { ...settings.movingAverage, slowPeriod: v },
+              })
+            }
+          />
+          <label className="opt-field">
+            <span className="opt-label">MA Type</span>
+            <select
+              className="opt-select"
+              value={settings.movingAverage.type}
+              onChange={(e) =>
+                update({
+                  movingAverage: {
+                    ...settings.movingAverage,
+                    type: e.target.value as AppSettings['movingAverage']['type'],
+                  },
+                })
+              }
+            >
+              <option value="ema">EMA</option>
+              <option value="sma">SMA</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section className="opt-section opt-section-muted">
+        <h2>Advanced filters</h2>
+        <p className="opt-hint">
+          Bollinger and rejection wick contribute to confidence scoring. ADX is
+          shown in the overlay for trend strength context only.
         </p>
         <div className="opt-grid">
           <NumField
@@ -598,20 +894,6 @@ export function OptionsApp() {
             onChange={(v) =>
               update({ adx: { ...settings.adx, threshold: v } })
             }
-          />
-          <NumField
-            label="EMA Fast"
-            value={settings.ema.fastPeriod}
-            min={2}
-            max={200}
-            onChange={(v) => update({ ema: { ...settings.ema, fastPeriod: v } })}
-          />
-          <NumField
-            label="EMA Slow"
-            value={settings.ema.slowPeriod}
-            min={2}
-            max={200}
-            onChange={(v) => update({ ema: { ...settings.ema, slowPeriod: v } })}
           />
         </div>
       </section>
