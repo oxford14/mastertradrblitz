@@ -8,7 +8,24 @@ import { executeTrade } from '../lib/exnova/trade-executor';
 import { loadSettings, onSettingsChanged, saveSettings } from '../lib/settings/storage';
 import { ProgressionManager } from '../lib/progression/progression-manager';
 import { updateInvestAmount } from '../lib/progression/amount-updater';
-import type { AutoTradeStatsSnapshot, ProgressionSnapshot } from '../types';
+import {
+  buildTradeEntrySnapshot,
+  captureCandlesAtEntry,
+} from '../lib/ai/trade-snapshot';
+import { processTradeAnalysis } from '../lib/ai/trade-analyst-processor';
+import {
+  clientCompleteJournalOnClose,
+  clientCountTradeRecords,
+  clientPushPendingJournalEntry,
+} from '../lib/ai/trade-journal-client';
+import { isOpenRouterConfigured } from '../lib/ai/openrouter-config';
+import { readLatestAnalysis } from '../lib/ai/analysis-storage';
+import type {
+  AiAnalystOverlayState,
+  AutoTradeStatsSnapshot,
+  LatestTradeAnalysis,
+  ProgressionSnapshot,
+} from '../types';
 import './overlay/overlay.css';
 
 const ROOT_ID = 'mtb-overlay-root';
@@ -46,6 +63,29 @@ async function bootstrap(): Promise<void> {
   const tradeStats = new AutoTradeStatsTracker();
   await tradeStats.load();
   let tradeStatsSnapshot: AutoTradeStatsSnapshot = tradeStats.getSnapshot();
+  let latestAnalysis: LatestTradeAnalysis | null = null;
+  let aiAnalystState: AiAnalystOverlayState = {
+    activity: 'idle',
+    lastError: null,
+    journalCount: 0,
+    apiKeyConfigured: isOpenRouterConfigured(),
+    model: currentSettings.aiAnalyst.model,
+  };
+
+  const refreshJournalCount = async () => {
+    try {
+      const count = await clientCountTradeRecords();
+      aiAnalystState = { ...aiAnalystState, journalCount: count };
+      render();
+    } catch {
+      // background journal unavailable
+    }
+  };
+
+  const setJournalSkipReason = (reason: string) => {
+    aiAnalystState = { ...aiAnalystState, lastError: reason };
+    render();
+  };
 
   const progressionManager = new ProgressionManager({
     getSettings: () => currentSettings,
@@ -87,11 +127,17 @@ async function bootstrap(): Promise<void> {
         autoTradeStats={tradeStatsSnapshot}
         progressionEnabled={currentSettings.progression.enabled}
         progressionSnapshot={progressionSnapshot}
+        aiAnalystEnabled={currentSettings.aiAnalyst.enabled}
+        latestAnalysis={latestAnalysis}
+        aiAnalystState={aiAnalystState}
         onAutoTradeToggle={(enabled) => {
-          void saveSettings({
+          currentSettings = {
             ...currentSettings,
             autoTrade: { ...currentSettings.autoTrade, enabled },
-          });
+          };
+          autoTrade.updateSettings(currentSettings);
+          render();
+          void saveSettings(currentSettings);
         }}
       />,
     );
@@ -115,6 +161,21 @@ async function bootstrap(): Promise<void> {
         (signal === 'HIGHER' || signal === 'LOWER')
       ) {
         await tradeStats.onAutoTradePlaced(signal, pipeline.getTradeExpirySec());
+        const placedAt = Date.now();
+        await clientPushPendingJournalEntry({
+          entry: buildTradeEntrySnapshot({
+            placedAt,
+            signal,
+            symbol: pipeline.store.getSymbol(),
+            stake: progressionManager.getSnapshot().stake,
+            progression: progressionManager.getSnapshot(),
+            dryRun: currentSettings.autoTrade.dryRun,
+            settings: currentSettings,
+            signalResult: pipeline.getLastResult(),
+          }),
+          expirySec: pipeline.getTradeExpirySec(),
+          candlesAtEntry: captureCandlesAtEntry(pipeline.store.getClosedCandles()),
+        });
       }
       render();
     });
@@ -183,6 +244,24 @@ async function bootstrap(): Promise<void> {
 
   render();
 
+  const refreshLatestAnalysis = async () => {
+    try {
+      latestAnalysis = await readLatestAnalysis();
+      render();
+    } catch {
+      // storage unavailable
+    }
+  };
+
+  void refreshLatestAnalysis();
+  void refreshJournalCount();
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.mtb_latest_analysis) return;
+    latestAnalysis = (changes.mtb_latest_analysis.newValue as LatestTradeAnalysis) ?? null;
+    render();
+  });
+
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     const data = event.data;
@@ -193,8 +272,48 @@ async function bootstrap(): Promise<void> {
         void (async () => {
           for (const ev of tradeEvents) {
             const attributed = await tradeStats.onTradeClosed(ev);
-            if (attributed) {
+            if (!attributed) {
+              if (currentSettings.autoTrade.enabled && !currentSettings.autoTrade.dryRun) {
+                setJournalSkipReason('Close not attributed to auto-trade');
+              }
+              continue;
+            }
               await progressionManager.onTradeResult(ev.outcome, true);
+            try {
+              const record = await clientCompleteJournalOnClose(ev);
+              if (!record) {
+                setJournalSkipReason(
+                  'No pending entry matched (tab may have refreshed before close)',
+                );
+                continue;
+              }
+              await refreshJournalCount();
+              if (
+                currentSettings.aiAnalyst.enabled &&
+                !record.entry.dryRun
+              ) {
+                aiAnalystState = {
+                  ...aiAnalystState,
+                  activity: 'analyzing',
+                  lastError: null,
+                  model: currentSettings.aiAnalyst.model,
+                };
+                render();
+                void processTradeAnalysis(record).then((result) => {
+                  aiAnalystState = {
+                    ...aiAnalystState,
+                    activity: result.ok ? 'done' : 'error',
+                    lastError: result.ok ? null : (result.error ?? 'Analysis failed'),
+                  };
+                  void refreshLatestAnalysis();
+                  void refreshJournalCount();
+                });
+              }
+            } catch (err) {
+              console.warn('[MTB AI] Journal save failed:', err);
+              setJournalSkipReason(
+                err instanceof Error ? err.message : 'Journal save failed',
+              );
             }
           }
           render();
@@ -222,6 +341,11 @@ async function bootstrap(): Promise<void> {
       prog.maxLevel !== prev.progression.maxLevel ||
       prog.customLevels.join(',') !== prev.progression.customLevels.join(',');
     currentSettings = next;
+    aiAnalystState = {
+      ...aiAnalystState,
+      model: next.aiAnalyst.model,
+      apiKeyConfigured: isOpenRouterConfigured(),
+    };
     autoTrade.updateSettings(next);
     pipeline.updateSettings(next);
     if (prog.enabled && (!prev.progression.enabled || progChanged)) {

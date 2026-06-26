@@ -107,7 +107,7 @@ export type ProgressionProfileId =
   | 'AD1000'
   | 'Custom';
 
-export type ProgressionMaxLevel = 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+export type ProgressionMaxLevel = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 export interface AmountFieldCalibration {
   screenX: number;
@@ -167,6 +167,15 @@ export interface ExnovaGuide {
   notes: string[];
 }
 
+export interface AiAnalystSettings {
+  enabled: boolean;
+  model: string;
+  autoApply: boolean;
+  batchEveryNTrades: number;
+  requireBacktestForBatch: boolean;
+  holdoutPercent: number;
+}
+
 export interface AppSettings {
   rsi: RsiSettings;
   stochastic: StochasticSettings;
@@ -176,7 +185,85 @@ export interface AppSettings {
   market: MarketSettings;
   autoTrade: AutoTradeSettings;
   progression: ProgressionSettings;
+  aiAnalyst: AiAnalystSettings;
   devLogWs: boolean;
+}
+
+export type TradeAnalysisVerdict = 'good_entry' | 'bad_entry' | 'marginal' | 'unclear';
+
+export interface AppliedPatchEntry {
+  path: string;
+  before: unknown;
+  after: unknown;
+}
+
+export interface TradeEntrySnapshot {
+  placedAt: number;
+  signal: 'HIGHER' | 'LOWER';
+  symbol: string;
+  stake: number;
+  progressionLevel: number;
+  dryRun: boolean;
+  settingsAtEntry: AppSettings;
+  signalResult: SignalResult | null;
+}
+
+export interface TradeAnalysis {
+  verdict: TradeAnalysisVerdict;
+  summary: string;
+  lessons: string[];
+  settingsPatch: Record<string, unknown>;
+  appliedPatches: AppliedPatchEntry[];
+  model: string;
+  analyzedAt: number;
+}
+
+export interface TradeRecord {
+  id: string;
+  placedAt: number;
+  closedAt: number;
+  signal: 'HIGHER' | 'LOWER';
+  outcome: TradeOutcome;
+  profit: number;
+  symbol: string;
+  stake: number;
+  progressionLevel: number;
+  entry: TradeEntrySnapshot;
+  candlesAtEntry: Candle[];
+  analysis?: TradeAnalysis;
+  analysisError?: string;
+}
+
+export interface LatestTradeAnalysis {
+  tradeId: string;
+  verdict: TradeAnalysisVerdict;
+  summary: string;
+  lessons: string[];
+  appliedPatches: AppliedPatchEntry[];
+  outcome: TradeOutcome;
+  signal: 'HIGHER' | 'LOWER';
+  analyzedAt: number;
+}
+
+export type AiAnalystActivity = 'idle' | 'analyzing' | 'done' | 'error';
+
+export interface AiAnalystOverlayState {
+  activity: AiAnalystActivity;
+  lastError: string | null;
+  journalCount: number;
+  apiKeyConfigured: boolean;
+  model: string;
+}
+
+export interface AggregateLearningRun {
+  id: string;
+  runAt: number;
+  tradeCount: number;
+  lessons: string[];
+  settingsPatch: Record<string, unknown>;
+  appliedPatches: AppliedPatchEntry[];
+  backtestScore?: number;
+  backtestApplied: boolean;
 }
 
 export type Signal = 'HIGHER' | 'LOWER' | 'WAIT';

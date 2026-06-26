@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
 .mtb-overlay {
   --mtb-rsi: #a855f7;
   --mtb-stoch-k: #fbbf24;
@@ -24,9 +26,9 @@
   border: 1px solid var(--mtb-border);
   border-radius: 12px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  font-size: 13px;
-  padding: 16px;
+  font-family: 'Poppins', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-size: 11px;
+  padding: 10px;
   user-select: none;
   pointer-events: none;
 }
@@ -35,7 +37,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   cursor: grab;
   gap: 8px;
   pointer-events: auto;
@@ -101,6 +103,7 @@
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  position: relative;
   pointer-events: auto;
   cursor: pointer;
   margin: 0;
@@ -187,12 +190,12 @@
 
 .mtb-signal-hero {
   text-align: center;
-  font-size: 38px;
+  font-size: 28px;
   font-weight: 800;
   letter-spacing: 0.1em;
-  padding: 16px 12px;
+  padding: 8px 10px;
   border-radius: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   line-height: 1.1;
 }
 
@@ -225,17 +228,17 @@
 }
 
 .mtb-dual-confidence {
-  margin-bottom: 16px;
+  margin-bottom: 8px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
 .mtb-dual-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
+  padding: 6px 8px;
   border-radius: 8px;
   border: 1px solid var(--mtb-border);
   background: #1a2332;
@@ -252,7 +255,7 @@
 }
 
 .mtb-dual-pct {
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -317,24 +320,24 @@
 }
 
 .mtb-requirements {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .mtb-requirements-title {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--mtb-muted);
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .mtb-req-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 0;
-  font-size: 13px;
+  padding: 2px 0;
+  font-size: 11px;
 }
 
 .mtb-req-label-rsi {
@@ -344,13 +347,13 @@
 .mtb-ok {
   color: var(--mtb-higher);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .mtb-fail {
   color: var(--mtb-muted);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .mtb-pattern-block {
@@ -466,8 +469,8 @@
   font-size: 10px;
   color: var(--mtb-muted);
   border-top: 1px solid var(--mtb-border);
-  padding-top: 10px;
-  margin-top: 12px;
+  padding-top: 6px;
+  margin-top: 8px;
 }
 
 .mtb-status span {
@@ -571,8 +574,8 @@
   background: #1a2332;
   border: 1px solid var(--mtb-border);
   border-radius: 8px;
-  padding: 8px 10px;
-  margin-bottom: 10px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
   pointer-events: none;
 }
 
@@ -603,7 +606,176 @@
   margin-bottom: 10px;
   font-size: 12px;
   line-height: 1.35;
-  pointer-events: none;
+}
+
+.mtb-ai-insight {
+  background: #151d2e;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.mtb-ai-insight-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mtb-muted);
+  margin-bottom: 4px;
+}
+
+.mtb-ai-verdict {
+  font-weight: 600;
+  margin-bottom: 4px;
+  text-transform: capitalize;
+}
+
+.mtb-ai-verdict-good {
+  color: #4ade80;
+}
+
+.mtb-ai-verdict-bad {
+  color: #f87171;
+}
+
+.mtb-ai-verdict-neutral {
+  color: #fbbf24;
+}
+
+.mtb-ai-summary {
+  color: #e2e8f0;
+}
+
+.mtb-ai-applied {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.mtb-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--mtb-border);
+  margin-bottom: 6px;
+}
+
+.mtb-tab {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--mtb-border);
+  border-radius: 6px;
+  background: #1a2332;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  position: relative;
+}
+
+.mtb-tab-active {
+  background: #243044;
+  color: #e2e8f0;
+  border-color: #475569;
+}
+
+.mtb-tab-badge {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: #38bdf8;
+  animation: mtb-pulse 1s ease-in-out infinite;
+}
+
+@keyframes mtb-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.mtb-ai-panel {
+  padding: 0 0 6px;
+}
+
+.mtb-ai-panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: #e2e8f0;
+}
+
+.mtb-ai-status-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+  font-size: 10px;
+}
+
+.mtb-ai-status-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #94a3b8;
+}
+
+.mtb-ai-model {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  text-align: right;
+  max-width: 55%;
+  word-break: break-all;
+}
+
+.mtb-ai-activity-busy {
+  color: #38bdf8;
+}
+
+.mtb-ai-activity-idle {
+  color: #cbd5e1;
+}
+
+.mtb-ai-error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.mtb-ai-hint {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+  margin: 8px 0 0;
+}
+
+.mtb-ai-hint-muted {
+  color: #64748b;
+  font-size: 10px;
+}
+
+.mtb-ai-lessons {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.mtb-compact-ai {
+  font-size: 10px;
+  color: #38bdf8;
+  font-weight: 600;
 }
 
 .mtb-progression-alert-stop {
@@ -611,4 +783,21 @@
   border-color: rgba(239, 68, 68, 0.5);
   color: #f87171;
   font-weight: 700;
+}
+
+.mtb-overlay-scroll {
+  max-height: min(72vh, 640px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  pointer-events: auto;
+  padding-right: 2px;
+}
+
+.mtb-overlay-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.mtb-overlay-scroll::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
 }

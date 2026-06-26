@@ -152,6 +152,7 @@ export class ProgressionManager {
     this.state = emptyState();
     await this.persist();
     this.emit();
+    await this.queueAmountUpdate();
   }
 
   async clearStop(): Promise<void> {

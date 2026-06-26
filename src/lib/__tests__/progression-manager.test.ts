@@ -91,6 +91,23 @@ describe('ProgressionManager', () => {
     expect(updateAmount).toHaveBeenCalled();
   });
 
+  it('resets to L1 on L2 loss when max level is L2', async () => {
+    settings = baseSettings({ maxLevel: 2, profileId: 'AD50' });
+    await memory.set(PROGRESSION_STATE_STORAGE_KEY, {
+      currentLevel: 2,
+      stopped: false,
+      lastAppliedStake: 183,
+      lastWarning: null,
+    });
+    await manager.load();
+
+    await manager.onTradeResult('loss', true);
+
+    expect(manager.getSnapshot().level).toBe(1);
+    expect(manager.getSnapshot().stake).toBe(50);
+    expect(updateAmount).toHaveBeenCalled();
+  });
+
   it('clears legacy stopped state on load', async () => {
     await memory.set(PROGRESSION_STATE_STORAGE_KEY, {
       currentLevel: 5,

@@ -9,8 +9,29 @@ import {
 import { loadSettings, saveSettings } from '../lib/settings/storage';
 import { findExnovaTab } from '../lib/exnova/find-exnova-tab';
 import { PROGRESSION_PROFILE_IDS } from '../lib/progression/tables';
-import type { AppSettings, ProgressionMaxLevel } from '../types';
+import { isOpenRouterConfigured } from '../lib/ai/openrouter-config';
+import {
+  OPENROUTER_MODEL_CUSTOM,
+  OPENROUTER_MODEL_PRESETS,
+  normalizeOpenRouterModel,
+  resolveModelSelectValue,
+} from '../lib/ai/openrouter-models';
+import { processTradeAnalysis, saveTradeToJournal } from '../lib/ai/trade-analyst-processor';
+import { clientListTradeRecords } from '../lib/ai/trade-journal-client';
+import type { AppSettings, ProgressionMaxLevel, TradeRecord } from '../types';
 import { ExnovaGuideCard } from './ExnovaGuideCard';
+
+function journalVerdict(row: TradeRecord): string {
+  if (row.analysis?.verdict) return row.analysis.verdict;
+  if (row.analysisError) return 'API error';
+  return '—';
+}
+
+function journalSummary(row: TradeRecord): string {
+  if (row.analysis?.summary) return row.analysis.summary;
+  if (row.analysisError) return row.analysisError;
+  return '—';
+}
 
 function NumField({
   label,
@@ -51,6 +72,12 @@ export function OptionsApp() {
   const [presetToast, setPresetToast] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [probeResult, setProbeResult] = useState<string | null>(null);
+  const [journalRecords, setJournalRecords] = useState<TradeRecord[]>([]);
+  const [journalDetail, setJournalDetail] = useState<TradeRecord | null>(null);
+  const [journalLoading, setJournalLoading] = useState(false);
+  const [retryingFailed, setRetryingFailed] = useState(false);
+  const apiKeyConfigured = isOpenRouterConfigured();
+  const modelSelectValue = resolveModelSelectValue(settings.aiAnalyst.model);
 
   const expiry = settings.market.tradeExpirySec;
   const guide = getExnovaGuide(expiry);
@@ -61,6 +88,22 @@ export function OptionsApp() {
       setLoading(false);
     });
   }, []);
+
+  const loadJournal = async () => {
+    setJournalLoading(true);
+    try {
+      const records = await clientListTradeRecords(200, 0, 'desc');
+      setJournalRecords(records);
+    } catch {
+      setJournalRecords([]);
+    } finally {
+      setJournalLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!loading) void loadJournal();
+  }, [loading]);
 
   const update = (patch: Partial<AppSettings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
@@ -176,6 +219,59 @@ export function OptionsApp() {
     setTimeout(() => setProbeResult(null), 6000);
   };
 
+  const handleExportJournalJson = async () => {
+    try {
+      const response = (await chrome.runtime.sendMessage({
+        type: 'mtb-journal-export-json',
+      })) as { ok?: boolean; json?: string };
+      if (response?.ok && response.json) {
+        const blob = new Blob([response.json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `mtb-trade-journal-${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      setProbeResult('Journal export failed.');
+      setTimeout(() => setProbeResult(null), 4000);
+    }
+  };
+
+  const handleExportJournalCsv = async () => {
+    try {
+      const response = (await chrome.runtime.sendMessage({
+        type: 'mtb-journal-export-csv',
+      })) as { ok?: boolean; csv?: string };
+      if (response?.ok && response.csv) {
+        const blob = new Blob([response.csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `mtb-trade-journal-${Date.now()}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      setProbeResult('Journal export failed.');
+      setTimeout(() => setProbeResult(null), 4000);
+    }
+  };
+
+  const handleClearJournal = async () => {
+    if (!window.confirm('Clear all trade journal history?')) return;
+    try {
+      await chrome.runtime.sendMessage({ type: 'mtb-journal-clear' });
+      setJournalRecords([]);
+      setJournalDetail(null);
+      setProbeResult('Trade journal cleared.');
+    } catch {
+      setProbeResult('Failed to clear journal.');
+    }
+    setTimeout(() => setProbeResult(null), 4000);
+  };
+
   const handleResetProgression = async () => {
     setProbeResult(null);
     try {
@@ -187,6 +283,62 @@ export function OptionsApp() {
       setProbeResult('Reset failed — refresh the Exnova tab.');
     }
     setTimeout(() => setProbeResult(null), 4000);
+  };
+
+  const handleReanalyzeTrade = async (record: TradeRecord) => {
+    setProbeResult(null);
+    await saveTradeToJournal(record);
+    const result = await processTradeAnalysis(record);
+    if (result.ok) {
+      setProbeResult('Analysis complete — refresh journal.');
+      await loadJournal();
+      const updated = (await chrome.runtime.sendMessage({
+        type: 'mtb-journal-get',
+        id: record.id,
+      })) as { ok?: boolean; record?: TradeRecord };
+      if (updated?.record) setJournalDetail(updated.record);
+    } else {
+      setProbeResult(result.error ?? 'Analysis failed.');
+      await loadJournal();
+    }
+    setTimeout(() => setProbeResult(null), 6000);
+  };
+
+  const handleTestModel = async () => {
+    setProbeResult(null);
+    const model = normalizeOpenRouterModel(settings.aiAnalyst.model);
+    try {
+      const result = (await chrome.runtime.sendMessage({
+        type: 'mtb-openrouter-test-model',
+        model,
+      })) as { ok?: boolean; message?: string };
+      setProbeResult(
+        result?.ok ? (result.message ?? 'Model OK') : (result?.message ?? 'Model test failed'),
+      );
+    } catch {
+      setProbeResult('Model test failed — reload extension and try again.');
+    }
+    setTimeout(() => setProbeResult(null), 8000);
+  };
+
+  const handleRetryFailedAnalyses = async () => {
+    const failed = journalRecords.filter((row) => row.analysisError && !row.analysis);
+    if (failed.length === 0) {
+      setProbeResult('No failed analyses to retry.');
+      setTimeout(() => setProbeResult(null), 4000);
+      return;
+    }
+    setRetryingFailed(true);
+    setProbeResult(`Retrying ${failed.length} failed analysis(es)…`);
+    let okCount = 0;
+    for (const record of failed) {
+      const result = await processTradeAnalysis(record);
+      if (result.ok) okCount += 1;
+    }
+    await loadJournal();
+    setRetryingFailed(false);
+    setProbeResult(`Retry complete: ${okCount}/${failed.length} succeeded.`);
+    setTimeout(() => setProbeResult(null), 8000);
   };
 
   const handlePingHelper = async () => {
@@ -661,7 +813,7 @@ export function OptionsApp() {
               })
             }
           >
-            {([3, 4, 5, 6, 7, 8, 9, 10] as const).map((level) => (
+            {([2, 3, 4, 5, 6, 7, 8, 9, 10] as const).map((level) => (
               <option key={level} value={level}>
                 L{level}
               </option>
@@ -896,6 +1048,229 @@ export function OptionsApp() {
             }
           />
         </div>
+      </section>
+
+      <section className="opt-section">
+        <h2>AI Trade Analyst</h2>
+        <p className="opt-hint">
+          Analyzes each closed auto-trade via OpenRouter and can auto-apply small
+          setting tweaks. API key is set in <code>.env.local</code> as{' '}
+          <code>VITE_OPENROUTER_API_KEY</code> — rebuild after changing.
+        </p>
+        <p className={apiKeyConfigured ? 'opt-toast' : 'opt-hint opt-hint-warn'}>
+          API key:{' '}
+          {apiKeyConfigured
+            ? 'configured (from .env.local build)'
+            : 'missing — add VITE_OPENROUTER_API_KEY to .env.local and run npm run build'}
+        </p>
+        <label className="opt-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.aiAnalyst.enabled}
+            onChange={(e) =>
+              update({
+                aiAnalyst: { ...settings.aiAnalyst, enabled: e.target.checked },
+              })
+            }
+          />
+          Enable AI analyst on auto-trade closes
+        </label>
+        <label className="opt-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.aiAnalyst.autoApply}
+            onChange={(e) =>
+              update({
+                aiAnalyst: { ...settings.aiAnalyst, autoApply: e.target.checked },
+              })
+            }
+          />
+          Auto-apply whitelisted setting suggestions
+        </label>
+        <label className="opt-field">
+          <span>OpenRouter model</span>
+          <select
+            value={modelSelectValue}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (next === OPENROUTER_MODEL_CUSTOM) {
+                update({ aiAnalyst: { ...settings.aiAnalyst, model: settings.aiAnalyst.model } });
+                return;
+              }
+              update({
+                aiAnalyst: { ...settings.aiAnalyst, model: normalizeOpenRouterModel(next) },
+              });
+            }}
+          >
+            {OPENROUTER_MODEL_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+            <option value={OPENROUTER_MODEL_CUSTOM}>Custom…</option>
+          </select>
+        </label>
+        {modelSelectValue === OPENROUTER_MODEL_CUSTOM && (
+          <label className="opt-field">
+            <span>Custom model slug</span>
+            <input
+              type="text"
+              value={settings.aiAnalyst.model}
+              placeholder="provider/model-name"
+              onChange={(e) =>
+                update({
+                  aiAnalyst: {
+                    ...settings.aiAnalyst,
+                    model: normalizeOpenRouterModel(e.target.value),
+                  },
+                })
+              }
+            />
+          </label>
+        )}
+        <p className="opt-hint">
+          Use full OpenRouter slug — browse{' '}
+          <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer">
+            openrouter.ai/models
+          </a>
+        </p>
+        <div className="opt-actions" style={{ marginBottom: '12px' }}>
+          <button
+            type="button"
+            className="opt-btn"
+            disabled={!apiKeyConfigured}
+            onClick={() => void handleTestModel()}
+          >
+            Test model
+          </button>
+        </div>
+        <div className="opt-grid">
+          <NumField
+            label="Batch learning every N trades (0=off)"
+            value={settings.aiAnalyst.batchEveryNTrades}
+            min={0}
+            max={500}
+            onChange={(v) =>
+              update({
+                aiAnalyst: { ...settings.aiAnalyst, batchEveryNTrades: v },
+              })
+            }
+          />
+          <NumField
+            label="Backtest holdout %"
+            value={settings.aiAnalyst.holdoutPercent}
+            min={5}
+            max={50}
+            onChange={(v) =>
+              update({
+                aiAnalyst: { ...settings.aiAnalyst, holdoutPercent: v },
+              })
+            }
+          />
+        </div>
+        <label className="opt-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.aiAnalyst.requireBacktestForBatch}
+            onChange={(e) =>
+              update({
+                aiAnalyst: {
+                  ...settings.aiAnalyst,
+                  requireBacktestForBatch: e.target.checked,
+                },
+              })
+            }
+          />
+          Require backtest improvement before batch setting changes
+        </label>
+      </section>
+
+      <section className="opt-section opt-section-muted">
+        <h2>Trade Journal</h2>
+        <p className="opt-hint">
+          Auto-attributed trades only. Stored in IndexedDB on this browser profile.
+        </p>
+        <div className="opt-actions" style={{ marginBottom: '12px' }}>
+          <button type="button" className="opt-btn" onClick={() => void loadJournal()}>
+            Refresh
+          </button>
+          <button type="button" className="opt-btn" onClick={() => void handleExportJournalJson()}>
+            Export JSON
+          </button>
+          <button type="button" className="opt-btn" onClick={() => void handleExportJournalCsv()}>
+            Export CSV
+          </button>
+          <button type="button" className="opt-btn" onClick={() => void handleClearJournal()}>
+            Clear history
+          </button>
+          <button
+            type="button"
+            className="opt-btn"
+            disabled={retryingFailed || !settings.aiAnalyst.enabled}
+            onClick={() => void handleRetryFailedAnalyses()}
+          >
+            {retryingFailed ? 'Retrying…' : 'Retry failed analyses'}
+          </button>
+        </div>
+        {journalLoading ? (
+          <p className="opt-hint">Loading journal…</p>
+        ) : journalRecords.length === 0 ? (
+          <p className="opt-hint">No closed auto-trades recorded yet.</p>
+        ) : (
+          <div className="opt-journal-table-wrap">
+            <table className="opt-journal-table">
+              <thead>
+                <tr>
+                  <th>Closed</th>
+                  <th>Signal</th>
+                  <th>Outcome</th>
+                  <th>Stake</th>
+                  <th>Verdict</th>
+                  <th>Summary</th>
+                </tr>
+              </thead>
+              <tbody>
+                {journalRecords.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="opt-journal-row"
+                    onClick={() => setJournalDetail(row)}
+                  >
+                    <td>{new Date(row.closedAt).toLocaleString()}</td>
+                    <td>{row.signal}</td>
+                    <td>{row.outcome}</td>
+                    <td>{row.stake}</td>
+                    <td>{journalVerdict(row)}</td>
+                    <td title={journalSummary(row)}>{journalSummary(row).slice(0, 80)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {journalDetail && (
+          <div className="opt-journal-detail">
+            <h3>Trade detail</h3>
+            {journalDetail.analysisError && (
+              <p className="opt-hint opt-hint-warn">Analysis error: {journalDetail.analysisError}</p>
+            )}
+            {(!journalDetail.analysis || journalDetail.analysisError) &&
+              settings.aiAnalyst.enabled && (
+              <button
+                type="button"
+                className="opt-btn opt-btn-primary"
+                style={{ marginBottom: '8px' }}
+                onClick={() => void handleReanalyzeTrade(journalDetail)}
+              >
+                Retry analysis
+              </button>
+            )}
+            <pre>{JSON.stringify(journalDetail, null, 2)}</pre>
+            <button type="button" className="opt-btn" onClick={() => setJournalDetail(null)}>
+              Close
+            </button>
+          </div>
+        )}
       </section>
 
       <div className="opt-actions">

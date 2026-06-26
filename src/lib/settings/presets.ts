@@ -83,6 +83,14 @@ const DEFAULT_PROGRESSION = {
   amountField: null,
   amountEntryMode: 'hybrid' as const,
 };
+const DEFAULT_AI_ANALYST = {
+  enabled: false,
+  model: 'google/gemini-2.0-flash-001',
+  autoApply: true,
+  batchEveryNTrades: 25,
+  requireBacktestForBatch: true,
+  holdoutPercent: 20,
+};
 const DEFAULT_AUTO_TRADE = {
   enabled: false,
   dryRun: true,
@@ -103,7 +111,7 @@ const DEFAULT_MARKET = {
   minimumSignalEdge: 5 as const,
 };
 
-function basePreset(expiry: TradeExpirySec): Omit<AppSettings, 'devLogWs'> {
+function basePreset(expiry: TradeExpirySec): Omit<AppSettings, 'devLogWs' | 'aiAnalyst'> {
   const guides = {
     5: {
       rsi: DEFAULT_RSI,
@@ -168,7 +176,7 @@ function basePreset(expiry: TradeExpirySec): Omit<AppSettings, 'devLogWs'> {
 }
 
 export function getPreset(expiry: TradeExpirySec, devLogWs = false): AppSettings {
-  return { ...basePreset(expiry), devLogWs };
+  return { ...basePreset(expiry), aiAnalyst: { ...DEFAULT_AI_ANALYST }, devLogWs };
 }
 
 export function getExnovaGuide(expiry: TradeExpirySec): ExnovaGuide {

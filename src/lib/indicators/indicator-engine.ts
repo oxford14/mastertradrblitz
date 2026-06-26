@@ -212,6 +212,7 @@ export function bollingerTouchHigher(
   return isNearLowerBand(
     indicators.price,
     indicators.bbLower,
+    indicators.bbUpper,
     settings.bollinger.bandProximityPct,
   );
 }
@@ -223,6 +224,7 @@ export function bollingerTouchLower(
   return isNearUpperBand(
     indicators.price,
     indicators.bbUpper,
+    indicators.bbLower,
     settings.bollinger.bandProximityPct,
   );
 }

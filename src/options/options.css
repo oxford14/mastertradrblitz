@@ -185,3 +185,60 @@ body {
 .opt-section-muted {
   opacity: 0.75;
 }
+
+.opt-hint-warn {
+  color: #fbbf24;
+}
+
+.opt-journal-table-wrap {
+  overflow-x: auto;
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid #334155;
+  border-radius: 8px;
+}
+
+.opt-journal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.opt-journal-table th,
+.opt-journal-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid #334155;
+}
+
+.opt-journal-table th {
+  position: sticky;
+  top: 0;
+  background: #1e293b;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.opt-journal-row {
+  cursor: pointer;
+}
+
+.opt-journal-row:hover {
+  background: #1e293b;
+}
+
+.opt-journal-detail {
+  margin-top: 12px;
+  padding: 12px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+}
+
+.opt-journal-detail pre {
+  max-height: 280px;
+  overflow: auto;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

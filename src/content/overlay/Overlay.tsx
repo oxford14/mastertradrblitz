@@ -1,5 +1,5 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import type { AutoTradeStatsSnapshot, AutoTradeStatus, MaTrend, ProgressionSnapshot, QualityChecklist, SignalDebug, SignalResult } from '../../types';
+import type { AutoTradeStatsSnapshot, AutoTradeStatus, AiAnalystOverlayState, LatestTradeAnalysis, MaTrend, ProgressionSnapshot, QualityChecklist, SignalDebug, SignalResult } from '../../types';
 import { getExnovaGuide, isTradeExpirySec } from '../../lib/settings/presets';
 import { displayConfidence, maTrendLabel } from '../../lib/signals/signal-engine';
 import { ExnovaGuideCard } from '../../options/ExnovaGuideCard';
@@ -16,8 +16,13 @@ interface OverlayProps {
   autoTradeStats: AutoTradeStatsSnapshot;
   progressionEnabled: boolean;
   progressionSnapshot: ProgressionSnapshot;
+  aiAnalystEnabled: boolean;
+  latestAnalysis: LatestTradeAnalysis | null;
+  aiAnalystState: AiAnalystOverlayState;
   onAutoTradeToggle: (enabled: boolean) => void;
 }
+
+type OverlayTab = 'signal' | 'ai';
 
 const REQUIREMENT_ROWS: {
   key: keyof QualityChecklist;
@@ -137,6 +142,109 @@ function AdvancedPanel({
   );
 }
 
+function AiAnalystPanel({
+  enabled,
+  state,
+  latestAnalysis,
+  verdictClass,
+}: {
+  enabled: boolean;
+  state: AiAnalystOverlayState;
+  latestAnalysis: LatestTradeAnalysis | null;
+  verdictClass: string;
+}) {
+  const activityLabel =
+    state.activity === 'analyzing'
+      ? 'Analyzing last trade…'
+      : state.activity === 'done'
+        ? 'Last analysis complete'
+        : state.activity === 'error'
+          ? 'Last analysis failed'
+          : 'Waiting for next auto-trade close';
+
+  return (
+    <div className="mtb-ai-panel">
+      <div className="mtb-ai-panel-title">AI Trade Analyst</div>
+
+      <div className="mtb-ai-status-grid">
+        <div className="mtb-ai-status-row">
+          <span>Analyst</span>
+          <span className={enabled ? 'mtb-ok' : 'mtb-fail'}>
+            {enabled ? '● Enabled' : '○ Disabled — turn on in Options'}
+          </span>
+        </div>
+        <div className="mtb-ai-status-row">
+          <span>API key</span>
+          <span className={state.apiKeyConfigured ? 'mtb-ok' : 'mtb-fail'}>
+            {state.apiKeyConfigured ? '● Configured' : '○ Missing — .env.local + rebuild'}
+          </span>
+        </div>
+        <div className="mtb-ai-status-row">
+          <span>Model</span>
+          <span className="mtb-ai-model">{state.model}</span>
+        </div>
+        <div className="mtb-ai-status-row">
+          <span>Journal</span>
+          <span>{state.journalCount} auto-trade(s) saved</span>
+        </div>
+        <div className="mtb-ai-status-row">
+          <span>Status</span>
+          <span
+            className={
+              state.activity === 'analyzing'
+                ? 'mtb-ai-activity-busy'
+                : state.activity === 'error'
+                  ? 'mtb-fail'
+                  : 'mtb-ai-activity-idle'
+            }
+          >
+            {activityLabel}
+          </span>
+        </div>
+      </div>
+
+      {state.lastError && (
+        <div className="mtb-ai-error">{state.lastError}</div>
+      )}
+
+      {latestAnalysis ? (
+        <div className="mtb-ai-insight">
+          <div className="mtb-ai-insight-title">Latest insight</div>
+          <div className={`mtb-ai-verdict ${verdictClass}`}>
+            {latestAnalysis.outcome.toUpperCase()} · {latestAnalysis.verdict.replace(/_/g, ' ')}
+          </div>
+          <div className="mtb-ai-summary">{latestAnalysis.summary}</div>
+          {latestAnalysis.lessons.length > 0 && (
+            <ul className="mtb-ai-lessons">
+              {latestAnalysis.lessons.map((lesson) => (
+                <li key={lesson}>{lesson}</li>
+              ))}
+            </ul>
+          )}
+          {latestAnalysis.appliedPatches.length > 0 && (
+            <div className="mtb-ai-applied">
+              Applied:{' '}
+              {latestAnalysis.appliedPatches
+                .map((p) => `${p.path} → ${String(p.after)}`)
+                .join(', ')}
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="mtb-ai-hint">
+          {enabled
+            ? 'When an auto-attributed trade closes, OpenRouter analyzes it here.'
+            : 'Enable AI analyst in extension Options to start learning from closes.'}
+        </p>
+      )}
+
+      <p className="mtb-ai-hint mtb-ai-hint-muted">
+        Full history: extension Options → Trade Journal
+      </p>
+    </div>
+  );
+}
+
 export function Overlay({
   result,
   symbol,
@@ -149,6 +257,9 @@ export function Overlay({
   autoTradeStats,
   progressionEnabled,
   progressionSnapshot,
+  aiAnalystEnabled,
+  latestAnalysis,
+  aiAnalystState,
   onAutoTradeToggle,
 }: OverlayProps) {
   const signal = result?.signal ?? 'WAIT';
@@ -175,6 +286,7 @@ export function Overlay({
   );
 
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState<OverlayTab>('signal');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ x: number; y: number; px: number; py: number } | null>(
@@ -245,6 +357,13 @@ export function Overlay({
     ? `${progressionSnapshot.profileId} · Level ${progressionSnapshot.level} · Stake: ${progressionSnapshot.stake}`
     : null;
 
+  const verdictClass =
+    latestAnalysis?.verdict === 'good_entry'
+      ? 'mtb-ai-verdict-good'
+      : latestAnalysis?.verdict === 'bad_entry'
+        ? 'mtb-ai-verdict-bad'
+        : 'mtb-ai-verdict-neutral';
+
   return (
     <div
       className="mtb-overlay"
@@ -261,6 +380,7 @@ export function Overlay({
         <label
           className="mtb-auto-switch"
           onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
           <span className="mtb-auto-switch-label">Auto</span>
           <input
@@ -293,31 +413,77 @@ export function Overlay({
         </span>
       </div>
 
+      {!panelCollapsed && (
+        <div className="mtb-tabs" onPointerDown={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className={`mtb-tab ${activeTab === 'signal' ? 'mtb-tab-active' : ''}`}
+            onClick={() => setActiveTab('signal')}
+          >
+            Signal
+          </button>
+          <button
+            type="button"
+            className={`mtb-tab ${activeTab === 'ai' ? 'mtb-tab-active' : ''}`}
+            onClick={() => setActiveTab('ai')}
+          >
+            AI Analyst
+            {aiAnalystState.activity === 'analyzing' && (
+              <span className="mtb-tab-badge" aria-hidden="true" />
+            )}
+          </button>
+        </div>
+      )}
+
       {panelCollapsed ? (
-        <div className="mtb-compact-bar">
-          <span className={`mtb-compact-signal ${signalClass}`}>
-            {confirming && pendingSignal !== 'WAIT' ? pendingSignal : signalLabel}
-          </span>
-          {progressionEnabled && (
-            <span className="mtb-compact-stake" title="Current progression stake">
-              L{progressionSnapshot.level} ${progressionSnapshot.stake}
+        <div className="mtb-overlay-scroll">
+          <div className="mtb-compact-bar">
+            <span className={`mtb-compact-signal ${signalClass}`}>
+              {confirming && pendingSignal !== 'WAIT' ? pendingSignal : signalLabel}
             </span>
-          )}
-          <span className="mtb-compact-wl" title={wlTitle}>
-            {wlDisplay}
-          </span>
+            {progressionEnabled && (
+              <span className="mtb-compact-stake" title="Current progression stake">
+                L{progressionSnapshot.level} ${progressionSnapshot.stake}
+              </span>
+            )}
+            <span className="mtb-compact-wl" title={wlTitle}>
+              {wlDisplay}
+            </span>
+            {aiAnalystState.activity === 'analyzing' && (
+              <span className="mtb-compact-ai" title="AI analyzing trade">
+                AI…
+              </span>
+            )}
+          </div>
         </div>
       ) : (
-        <>
+        <div className="mtb-overlay-scroll">
+          {activeTab === 'ai' ? (
+            <AiAnalystPanel
+              enabled={aiAnalystEnabled}
+              state={aiAnalystState}
+              latestAnalysis={latestAnalysis}
+              verdictClass={verdictClass}
+            />
+          ) : (
+            <>
           {progressionEnabled && (
-            <div className="mtb-progression">
+            <div
+              className={`mtb-progression${progressionSnapshot.stopped ? ' mtb-progression-stopped' : ''}`}
+            >
               <div className="mtb-progression-title">Current Progression</div>
               <div className="mtb-progression-line">{progressionLine}</div>
             </div>
           )}
 
           {progressionEnabled && progressionSnapshot.lastWarning && (
-            <div className="mtb-progression-alert">{progressionSnapshot.lastWarning}</div>
+            <div
+              className={`mtb-progression-alert${
+                progressionSnapshot.stopped ? ' mtb-progression-alert-stop' : ''
+              }`}
+            >
+              {progressionSnapshot.lastWarning}
+            </div>
           )}
 
           <div className={`mtb-signal-hero ${signalClass}`}>{signalLabel}</div>
@@ -407,7 +573,9 @@ export function Overlay({
                 : `${candleCount} bars`}
             </span>
           </div>
-        </>
+            </>
+          )}
+        </div>
       )}
     </div>
   );

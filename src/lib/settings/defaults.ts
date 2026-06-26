@@ -1,4 +1,5 @@
 import type {
+  AiAnalystSettings,
   AppSettings,
   MaType,
   MinimumSignalConfidence,
@@ -9,8 +10,36 @@ import type {
 } from '../../types';
 import { getPreset, isTradeExpirySec } from './presets';
 import { DEFAULT_CUSTOM_LEVELS, isProgressionProfileId } from '../progression/tables';
+import {
+  DEFAULT_OPENROUTER_MODEL,
+  normalizeOpenRouterModel,
+} from '../ai/openrouter-models';
 
 export const DEFAULT_SETTINGS: AppSettings = getPreset(5);
+
+const DEFAULT_AI_ANALYST: AiAnalystSettings = {
+  enabled: false,
+  model: DEFAULT_OPENROUTER_MODEL,
+  autoApply: true,
+  batchEveryNTrades: 25,
+  requireBacktestForBatch: true,
+  holdoutPercent: 20,
+};
+
+function validateAiAnalyst(raw: Partial<AiAnalystSettings> | undefined): AiAnalystSettings {
+  const batchEveryNTrades = Math.round(Number(raw?.batchEveryNTrades ?? 25));
+  const holdoutPercent = Math.round(Number(raw?.holdoutPercent ?? 20));
+  return {
+    enabled: raw?.enabled ?? false,
+    model: normalizeOpenRouterModel(
+      typeof raw?.model === 'string' && raw.model.trim() ? raw.model : DEFAULT_AI_ANALYST.model,
+    ),
+    autoApply: raw?.autoApply ?? true,
+    batchEveryNTrades: batchEveryNTrades >= 0 ? Math.min(batchEveryNTrades, 500) : 25,
+    requireBacktestForBatch: raw?.requireBacktestForBatch ?? true,
+    holdoutPercent: holdoutPercent >= 5 && holdoutPercent <= 50 ? holdoutPercent : 20,
+  };
+}
 
 export function validateSettings(settings: AppSettings): AppSettings {
   const clamp = (v: number, min: number, max: number) =>
@@ -124,7 +153,7 @@ export function validateSettings(settings: AppSettings): AppSettings {
       )
         ? (p!.profileId as ProgressionProfileId)
         : 'D200';
-      const maxLevels: ProgressionMaxLevel[] = [3, 4, 5, 6, 7, 8, 9, 10];
+      const maxLevels: ProgressionMaxLevel[] = [2, 3, 4, 5, 6, 7, 8, 9, 10];
       const maxLevel: ProgressionMaxLevel = maxLevels.includes(
         p?.maxLevel as ProgressionMaxLevel,
       )
@@ -163,6 +192,7 @@ export function validateSettings(settings: AppSettings): AppSettings {
         amountEntryMode: p?.amountEntryMode === 'keypad' ? 'keypad' : 'hybrid',
       };
     })(),
+    aiAnalyst: validateAiAnalyst(settings.aiAnalyst),
     devLogWs: settings.devLogWs,
   };
 }

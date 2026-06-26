@@ -10,6 +10,9 @@ export interface BollingerResult {
   lower: number;
 }
 
+/** Bands narrower than this (as % of middle) are treated as undefined — avoids false "touch" when std ≈ 0. */
+export const MIN_BAND_WIDTH_PCT = 0.02;
+
 export function computeBollinger(
   closes: number[],
   period: number,
@@ -33,20 +36,41 @@ export function computeBollinger(
   };
 }
 
+function hasMeaningfulBandWidth(lower: number, upper: number): boolean {
+  const middle = (upper + lower) / 2;
+  const width = upper - lower;
+  if (!Number.isFinite(width) || width <= 0 || middle <= 0) return false;
+  return width / middle >= MIN_BAND_WIDTH_PCT / 100;
+}
+
+/**
+ * HIGHER setup: price near the lower band.
+ * proximityPct is a % of total band width (upper − lower), not a % of price level.
+ */
 export function isNearLowerBand(
   price: number,
   lower: number,
-  proximityPct: number,
-): boolean {
-  const threshold = lower * (1 + proximityPct / 100);
-  return price <= threshold;
-}
-
-export function isNearUpperBand(
-  price: number,
   upper: number,
   proximityPct: number,
 ): boolean {
-  const threshold = upper * (1 - proximityPct / 100);
-  return price >= threshold;
+  if (!hasMeaningfulBandWidth(lower, upper)) return false;
+  const width = upper - lower;
+  const margin = width * (proximityPct / 100);
+  return price <= lower + margin;
+}
+
+/**
+ * LOWER setup: price near the upper band.
+ * proximityPct is a % of total band width (upper − lower), not a % of price level.
+ */
+export function isNearUpperBand(
+  price: number,
+  upper: number,
+  lower: number,
+  proximityPct: number,
+): boolean {
+  if (!hasMeaningfulBandWidth(lower, upper)) return false;
+  const width = upper - lower;
+  const margin = width * (proximityPct / 100);
+  return price >= upper - margin;
 }
