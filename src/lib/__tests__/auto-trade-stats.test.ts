@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { AutoTradeStatsTracker } from '../exnova/auto-trade-stats';
 import type { AutoTradeStatsData } from '../../types';
 
@@ -183,5 +183,27 @@ describe('AutoTradeStatsTracker', () => {
       longestWinStreak: 0,
       longestLossStreak: 0,
     });
+  });
+
+  it('reports open trades until expiry plus buffer', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    tracker.registerPendingPlacement('HIGHER', 5);
+
+    expect(tracker.hasOpenTrade(14_000)).toBe(true);
+    expect(tracker.secondsUntilTradeSlot(14_000)).toBe(6);
+    expect(tracker.hasOpenTrade(20_000)).toBe(false);
+    expect(tracker.secondsUntilTradeSlot(20_000)).toBe(0);
+
+    vi.useRealTimers();
+  });
+
+  it('rollbackLastPending removes optimistic pending entry', async () => {
+    tracker.registerPendingPlacement('LOWER', 5);
+    expect(tracker.getSnapshot().pendingCount).toBe(1);
+
+    tracker.rollbackLastPending();
+    expect(tracker.getSnapshot().pendingCount).toBe(0);
+    expect(tracker.hasOpenTrade()).toBe(false);
   });
 });

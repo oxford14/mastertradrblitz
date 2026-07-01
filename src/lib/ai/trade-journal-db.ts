@@ -127,6 +127,47 @@ export async function appendAggregateRun(run: AggregateLearningRun): Promise<voi
   await runTransaction('readwrite', RUNS_STORE, (store) => store.put(run));
 }
 
+export async function listAggregateRuns(
+  limit = 10,
+  offset = 0,
+  order: 'asc' | 'desc' = 'desc',
+): Promise<AggregateLearningRun[]> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(RUNS_STORE, 'readonly');
+    const store = tx.objectStore(RUNS_STORE);
+    const index = store.index('runAt');
+    const direction = order === 'desc' ? 'prev' : 'next';
+    const results: AggregateLearningRun[] = [];
+    let skipped = 0;
+    const cursorReq = index.openCursor(null, direction);
+    cursorReq.onsuccess = () => {
+      const cursor = cursorReq.result;
+      if (!cursor) {
+        db.close();
+        resolve(results);
+        return;
+      }
+      if (skipped < offset) {
+        skipped += 1;
+        cursor.continue();
+        return;
+      }
+      results.push(cursor.value as AggregateLearningRun);
+      if (results.length >= limit) {
+        db.close();
+        resolve(results);
+        return;
+      }
+      cursor.continue();
+    };
+    cursorReq.onerror = () => {
+      db.close();
+      reject(cursorReq.error ?? new Error('Cursor failed'));
+    };
+  });
+}
+
 export async function exportTradeRecordsJson(): Promise<string> {
   const all: TradeRecord[] = [];
   let offset = 0;

@@ -27,6 +27,7 @@ import {
   clearTradeJournal,
   exportTradeRecordsJson,
   getTradeRecord,
+  listAggregateRuns,
   listTradeRecords,
   tradeRecordsToCsv,
 } from '../lib/ai/trade-journal-db';
@@ -41,6 +42,7 @@ import {
 } from '../lib/ai/trade-journal-service';
 import { isOpenRouterConfigured } from '../lib/ai/openrouter-config';
 import { testOpenRouterModel } from '../lib/ai/openrouter-client';
+import { loadSettings } from '../lib/settings/storage';
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'settings-updated') {
@@ -239,14 +241,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({ ok: false, message: 'OpenRouter API key not configured' });
       return false;
     }
-    void testOpenRouterModel(model)
-      .then((result) =>
-        sendResponse(
-          result.ok
-            ? { ok: true, message: `Model OK: ${model}` }
-            : { ok: false, message: result.error ?? 'Model test failed' },
-        ),
-      )
+    void loadSettings()
+      .then((settings) => {
+        if (!settings.aiAnalyst.enabled) {
+          sendResponse({
+            ok: false,
+            message: 'AI analyst disabled — enable in Options or overlay before testing model',
+          });
+          return;
+        }
+        return testOpenRouterModel(model).then((result) =>
+          sendResponse(
+            result.ok
+              ? { ok: true, message: `Model OK: ${model}` }
+              : { ok: false, message: result.error ?? 'Model test failed' },
+          ),
+        );
+      })
       .catch((err: unknown) =>
         sendResponse({
           ok: false,
@@ -368,6 +379,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === 'mtb-journal-aggregate-list') {
+    const limit = Number(message.limit) || 10;
+    const offset = Number(message.offset) || 0;
+    const order = message.order === 'asc' ? 'asc' : 'desc';
+    void listAggregateRuns(limit, offset, order)
+      .then((runs) => sendResponse({ ok: true, runs }))
+      .catch((err: unknown) =>
+        sendResponse({
+          ok: false,
+          message: err instanceof Error ? err.message : 'Failed to list aggregate runs',
+        }),
+      );
+    return true;
+  }
+
   if (message?.type === 'mtb-journal-get') {
     const id = String(message.id ?? '');
     if (!id) {
@@ -419,6 +445,51 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           message: err instanceof Error ? err.message : 'Export failed',
         }),
       );
+    return true;
+  }
+
+  if (message?.type === 'mtb-api-request') {
+    const apiBaseUrl = String(message.apiBaseUrl ?? '').replace(/\/$/, '');
+    const apiKey = String(message.apiKey ?? '');
+    const path = String(message.path ?? '');
+    const method = String(message.method ?? 'GET');
+    const body = typeof message.body === 'string' ? message.body : undefined;
+
+    if (!apiBaseUrl || !path.startsWith('/api/')) {
+      sendResponse({
+        ok: false,
+        status: 0,
+        body: '',
+        message: 'Invalid API request',
+      });
+      return false;
+    }
+
+    void fetch(`${apiBaseUrl}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-mtb-api-key': apiKey,
+      },
+      body: method === 'GET' || method === 'HEAD' ? undefined : body,
+    })
+      .then(async (res) => {
+        const text = await res.text().catch(() => '');
+        sendResponse({
+          ok: res.ok,
+          status: res.status,
+          body: text,
+        });
+      })
+      .catch((err: unknown) => {
+        const messageText = err instanceof Error ? err.message : 'Network error';
+        sendResponse({
+          ok: false,
+          status: 0,
+          body: '',
+          message: messageText,
+        });
+      });
     return true;
   }
 

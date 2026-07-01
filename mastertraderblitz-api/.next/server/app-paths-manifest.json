@@ -1,0 +1,7 @@
+{
+  "/api/decisions/route": "app/api/decisions/route.js",
+  "/settings/page": "app/settings/page.js",
+  "/analytics/page": "app/analytics/page.js",
+  "/page": "app/page.js",
+  "/decisions/page": "app/decisions/page.js"
+}

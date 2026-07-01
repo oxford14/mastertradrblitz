@@ -34,6 +34,10 @@ describe('presets', () => {
     expect(preset.stochastic.crossValidityBars).toBe(3);
     expect(preset.market.minimumSignalConfidence).toBe(70);
     expect(preset.market.minimumSignalEdge).toBe(5);
+    expect(preset.cci.enabled).toBe(true);
+    expect(preset.cci.period).toBe(14);
+    expect(preset.cci.overbought).toBe(100);
+    expect(preset.cci.oversold).toBe(-100);
     expect(preset.autoTrade.enabled).toBe(false);
     expect(preset.autoTrade.dryRun).toBe(true);
     expect(preset.autoTrade.useCanvas).toBe(true);

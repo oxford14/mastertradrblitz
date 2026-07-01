@@ -15,8 +15,11 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "types": ["chrome", "vite/client"]
+    "types": ["chrome", "vite/client"],
+    "paths": {
+      "@mtb/shared": ["./packages/shared/src/index.ts"]
+    }
   },
-  "include": ["src"],
+  "include": ["src", "packages/shared/src"],
   "exclude": ["src/**/*.test.ts"]
 }

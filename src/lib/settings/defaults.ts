@@ -14,27 +14,40 @@ import {
   DEFAULT_OPENROUTER_MODEL,
   normalizeOpenRouterModel,
 } from '../ai/openrouter-models';
+import { normalizeAutoTradeDirectionFilter } from '../exnova/auto-trade-direction';
 
 export const DEFAULT_SETTINGS: AppSettings = getPreset(5);
 
 const DEFAULT_AI_ANALYST: AiAnalystSettings = {
   enabled: false,
   model: DEFAULT_OPENROUTER_MODEL,
-  autoApply: true,
+  autoApplyPerTrade: false,
+  autoApplyBatch: true,
   batchEveryNTrades: 25,
   requireBacktestForBatch: true,
   holdoutPercent: 20,
 };
 
-function validateAiAnalyst(raw: Partial<AiAnalystSettings> | undefined): AiAnalystSettings {
+function validateAiAnalyst(
+  raw: Partial<AiAnalystSettings & { autoApply?: boolean }> | undefined,
+): AiAnalystSettings {
   const batchEveryNTrades = Math.round(Number(raw?.batchEveryNTrades ?? 25));
   const holdoutPercent = Math.round(Number(raw?.holdoutPercent ?? 20));
+
+  let autoApplyPerTrade = raw?.autoApplyPerTrade;
+  let autoApplyBatch = raw?.autoApplyBatch;
+  if (autoApplyPerTrade === undefined && autoApplyBatch === undefined && raw?.autoApply !== undefined) {
+    autoApplyPerTrade = raw.autoApply;
+    autoApplyBatch = raw.autoApply;
+  }
+
   return {
     enabled: raw?.enabled ?? false,
     model: normalizeOpenRouterModel(
       typeof raw?.model === 'string' && raw.model.trim() ? raw.model : DEFAULT_AI_ANALYST.model,
     ),
-    autoApply: raw?.autoApply ?? true,
+    autoApplyPerTrade: autoApplyPerTrade ?? DEFAULT_AI_ANALYST.autoApplyPerTrade,
+    autoApplyBatch: autoApplyBatch ?? DEFAULT_AI_ANALYST.autoApplyBatch,
     batchEveryNTrades: batchEveryNTrades >= 0 ? Math.min(batchEveryNTrades, 500) : 25,
     requireBacktestForBatch: raw?.requireBacktestForBatch ?? true,
     holdoutPercent: holdoutPercent >= 5 && holdoutPercent <= 50 ? holdoutPercent : 20,
@@ -91,11 +104,18 @@ export function validateSettings(settings: AppSettings): AppSettings {
         fastPeriod: clamp(Math.round(ma?.fastPeriod ?? 9), 2, 200),
         slowPeriod: clamp(Math.round(ma?.slowPeriod ?? 21), 2, 200),
         type,
+        requireTrendAlignment: settings.movingAverage?.requireTrendAlignment ?? false,
       };
     })(),
     adx: {
       period: clamp(Math.round(settings.adx?.period ?? 14), 2, 100),
       threshold: clamp(settings.adx?.threshold ?? 20, 5, 100),
+    },
+    cci: {
+      enabled: settings.cci?.enabled ?? true,
+      period: clamp(Math.round(settings.cci?.period ?? 14), 2, 100),
+      overbought: clamp(Math.round(settings.cci?.overbought ?? 100), 1, 500),
+      oversold: clamp(Math.round(settings.cci?.oversold ?? -100), -500, -1),
     },
     market: {
       tradeExpirySec,
@@ -123,6 +143,9 @@ export function validateSettings(settings: AppSettings): AppSettings {
       dryRun: settings.autoTrade?.dryRun ?? true,
       useCanvas: settings.autoTrade?.useCanvas ?? true,
       clickEngine: 'native',
+      directionFilter: normalizeAutoTradeDirectionFilter(
+        settings.autoTrade?.directionFilter,
+      ),
       canvas: {
         higherXPercent: clamp(
           Number(settings.autoTrade?.canvas?.higherXPercent ?? 88),
@@ -193,6 +216,29 @@ export function validateSettings(settings: AppSettings): AppSettings {
       };
     })(),
     aiAnalyst: validateAiAnalyst(settings.aiAnalyst),
+    tradingMode: settings.tradingMode === 'AI' ? 'AI' : 'LEGACY',
+    aiBackend: {
+      apiBaseUrl: String(settings.aiBackend?.apiBaseUrl ?? '').trim(),
+      apiKey: String(settings.aiBackend?.apiKey ?? '').trim(),
+    },
+    autoTradingMode:
+      settings.autoTradingMode === 'semi' || settings.autoTradingMode === 'full'
+        ? settings.autoTradingMode
+        : 'manual',
+    aiConfidenceThreshold: clamp(
+      Math.round(Number(settings.aiConfidenceThreshold ?? 70)),
+      0,
+      100,
+    ),
+    aiAutoTradeThreshold: clamp(
+      Math.round(Number(settings.aiAutoTradeThreshold ?? 85)),
+      0,
+      100,
+    ),
+    assignedStrategyId:
+      typeof settings.assignedStrategyId === 'string' && settings.assignedStrategyId.trim()
+        ? settings.assignedStrategyId.trim()
+        : null,
     devLogWs: settings.devLogWs,
   };
 }

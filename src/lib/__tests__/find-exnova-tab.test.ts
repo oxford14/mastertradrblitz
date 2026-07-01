@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isExnovaTradeUrl } from '../exnova/find-exnova-tab';
+import { isExnovaTraderoomUrl } from '../exnova/traderoom-url';
 
 describe('isExnovaTradeUrl', () => {
   it('matches trade.exnova.com URLs', () => {
@@ -13,5 +14,14 @@ describe('isExnovaTradeUrl', () => {
       false,
     );
     expect(isExnovaTradeUrl(undefined)).toBe(false);
+  });
+});
+
+describe('isExnovaTraderoomUrl', () => {
+  it('distinguishes traderoom from other Exnova pages', () => {
+    expect(isExnovaTraderoomUrl('https://trade.exnova.com/traderoom')).toBe(true);
+    expect(isExnovaTraderoomUrl('https://trade.exnova.com/en/profile/personal')).toBe(
+      false,
+    );
   });
 });

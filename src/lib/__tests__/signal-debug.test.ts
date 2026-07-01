@@ -26,6 +26,7 @@ const base: IndicatorSnapshot = {
   maFast: 100,
   maSlow: 99,
   maTrend: 'up',
+  cci: null,
 };
 
 const bullishPattern: PatternSnapshot = {
@@ -47,7 +48,7 @@ describe('signal debug reasons', () => {
       adx,
     );
     expect(result.debug.reason).toContain('HIGHER');
-    expect(result.debug.higherConfidence.total).toBe(110);
+    expect(result.debug.higherConfidence.total).toBe(133);
     expect(result.debug.reason).toContain('100%');
     expect(result.debug.adx).toBe(25);
     expect(result.debug.plusDi).toBe(30);
@@ -90,6 +91,7 @@ describe('signal debug reasons', () => {
     expect(debug.higherConfidence.bollinger).toBe(10);
     expect(debug.higherConfidence.rejectionWick).toBe(10);
     expect(debug.higherConfidence.movingAverage).toBe(10);
-    expect(debug.lowerConfidence.total).toBe(0);
+    expect(debug.lowerConfidence.total).toBe(10);
+    expect(debug.lowerConfidence.adxStrength).toBe(10);
   });
 });

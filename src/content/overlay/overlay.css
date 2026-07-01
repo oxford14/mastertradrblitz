@@ -15,12 +15,16 @@
   --mtb-border: #2a3544;
   --mtb-text: #e7ecf3;
   --mtb-muted: #64748b;
+  --mtb-scroll-max: min(72vh, 560px);
 
   position: fixed;
   top: 16px;
   right: 16px;
   z-index: 2147483646;
   width: 380px;
+  max-height: min(90vh, 820px);
+  display: flex;
+  flex-direction: column;
   background: var(--mtb-bg);
   color: var(--mtb-text);
   border: 1px solid var(--mtb-border);
@@ -31,6 +35,7 @@
   padding: 10px;
   user-select: none;
   pointer-events: none;
+  box-sizing: border-box;
 }
 
 .mtb-header {
@@ -41,6 +46,13 @@
   cursor: grab;
   gap: 8px;
   pointer-events: auto;
+}
+
+.mtb-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .mtb-header:active {
@@ -99,76 +111,7 @@
 }
 
 .mtb-auto-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   flex-shrink: 0;
-  position: relative;
-  pointer-events: auto;
-  cursor: pointer;
-  margin: 0;
-}
-
-.mtb-auto-switch-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--mtb-muted);
-  letter-spacing: 0.03em;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.mtb-switch-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.mtb-switch-track {
-  position: relative;
-  display: block;
-  width: 36px;
-  height: 20px;
-  border-radius: 10px;
-  border: 1px solid var(--mtb-border);
-  background: #1a2332;
-  box-sizing: border-box;
-  flex-shrink: 0;
-}
-
-.mtb-switch-track::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #64748b;
-}
-
-.mtb-switch-input:checked + .mtb-switch-track {
-  background: rgba(34, 197, 94, 0.35);
-  border-color: rgba(34, 197, 94, 0.45);
-}
-
-.mtb-switch-input:checked + .mtb-switch-track::after {
-  left: 18px;
-  background: var(--mtb-higher);
-}
-
-.mtb-switch-input:focus + .mtb-switch-track {
-  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.35);
-}
-
-.mtb-switch-input:focus {
-  outline: none;
 }
 
 .mtb-ws {
@@ -286,9 +229,18 @@
   text-align: center;
   font-size: 11px;
   color: var(--mtb-muted);
-  margin: -4px 0 12px;
+  margin: 0;
   font-weight: 500;
   line-height: 1.35;
+  min-height: 18px;
+}
+
+.mtb-auto-trade-empty {
+  visibility: hidden;
+}
+
+.mtb-status-stack {
+  margin-bottom: 8px;
 }
 
 .mtb-auto-trade-error {
@@ -323,6 +275,32 @@
   margin-bottom: 8px;
 }
 
+.mtb-req-group + .mtb-req-group {
+  margin-top: 6px;
+}
+
+.mtb-req-group-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--mtb-muted);
+  margin-bottom: 2px;
+}
+
+.mtb-req-booster-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+@media (min-width: 280px) {
+  .mtb-req-booster-grid {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 8px;
+  }
+}
+
 .mtb-requirements-title {
   font-size: 10px;
   font-weight: 600;
@@ -336,7 +314,12 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 2px 0;
+  padding: 1px 0;
+  font-size: 11px;
+}
+
+.mtb-requirements .mtb-ok,
+.mtb-requirements .mtb-fail {
   font-size: 11px;
 }
 
@@ -654,41 +637,18 @@
   color: #94a3b8;
 }
 
-.mtb-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 0 0 6px;
-  border-bottom: 1px solid var(--mtb-border);
-  margin-bottom: 6px;
-}
-
-.mtb-tab {
-  flex: 1;
-  padding: 6px 8px;
-  border: 1px solid var(--mtb-border);
-  border-radius: 6px;
-  background: #1a2332;
-  color: #94a3b8;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  position: relative;
-}
-
-.mtb-tab-active {
-  background: #243044;
-  color: #e2e8f0;
-  border-color: #475569;
-}
-
 .mtb-tab-badge {
-  display: inline-block;
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  display: block;
   width: 6px;
   height: 6px;
-  margin-left: 4px;
+  margin: 0;
   border-radius: 50%;
   background: #38bdf8;
   animation: mtb-pulse 1s ease-in-out infinite;
+  pointer-events: none;
 }
 
 @keyframes mtb-pulse {
@@ -705,11 +665,51 @@
   padding: 0 0 6px;
 }
 
+.mtb-ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 .mtb-ai-panel-title {
   font-size: 11px;
   font-weight: 700;
-  margin-bottom: 6px;
   color: #e2e8f0;
+}
+
+.mtb-ai-panel-hint {
+  font-size: 10px;
+  line-height: 1.35;
+  color: #94a3b8;
+  margin: 0 0 8px;
+}
+
+.mtb-openrouter-key-banner {
+  font-size: 10px;
+  line-height: 1.35;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 0 0 8px;
+}
+
+.mtb-openrouter-key-banner code {
+  font-size: 9px;
+}
+
+.mtb-openrouter-live-line {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #fbbf24;
+  margin: 0 0 4px;
+}
+
+.mtb-ai-analyst-switch {
+  flex-shrink: 0;
 }
 
 .mtb-ai-status-grid {
@@ -733,6 +733,56 @@
   text-align: right;
   max-width: 55%;
   word-break: break-all;
+}
+
+.mtb-ai-model-select {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  pointer-events: auto;
+}
+
+.mtb-ai-model-select-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.mtb-ai-model-select-label > span:first-child {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 9px;
+}
+
+.mtb-ai-model-select-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--mtb-border);
+  background: #0b0f14;
+  color: var(--mtb-text);
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  pointer-events: auto;
+}
+
+.mtb-ai-model-select-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.mtb-ai-model-select-input:focus-visible {
+  outline: 2px solid rgba(148, 163, 184, 0.55);
+  outline-offset: 1px;
+}
+
+.mtb-ai-model-select-custom {
+  margin-top: 2px;
 }
 
 .mtb-ai-activity-busy {
@@ -786,11 +836,110 @@
 }
 
 .mtb-overlay-scroll {
-  max-height: min(72vh, 640px);
+  flex: 1;
+  min-height: 0;
+  max-height: var(--mtb-scroll-max);
   overflow-y: auto;
   overflow-x: hidden;
   pointer-events: auto;
   padding-right: 2px;
+}
+
+.mtb-overlay-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.mtb-overlay-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--mtb-border);
+  padding-top: 6px;
+  margin-top: 4px;
+  pointer-events: auto;
+}
+
+.mtb-overlay-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  pointer-events: auto;
+}
+
+/* Radix tabs */
+.mtb-radix-tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  pointer-events: auto;
+}
+
+.mtb-radix-tabs-list {
+  display: flex;
+  gap: 4px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--mtb-border);
+  margin-bottom: 6px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  align-items: stretch;
+  box-sizing: border-box;
+}
+
+.mtb-overlay button.mtb-radix-tabs-trigger {
+  all: unset;
+  box-sizing: border-box !important;
+  flex: 1;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  padding: 0 8px !important;
+  border: 1px solid var(--mtb-border) !important;
+  border-radius: 6px !important;
+  background: #1a2332 !important;
+  color: #94a3b8 !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  position: relative !important;
+  font-family: inherit !important;
+  pointer-events: auto !important;
+  z-index: 1;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+}
+
+.mtb-overlay button.mtb-radix-tabs-trigger[data-state='active'] {
+  background: #243044 !important;
+  color: #e2e8f0 !important;
+  border-color: #475569 !important;
+}
+
+.mtb-overlay button.mtb-radix-tabs-trigger:focus-visible {
+  outline: 2px solid rgba(148, 163, 184, 0.55) !important;
+  outline-offset: 2px !important;
+}
+
+.mtb-radix-tabs-content {
+  outline: none;
+}
+
+.mtb-radix-tabs-content[data-state='inactive'] {
+  display: none;
 }
 
 .mtb-overlay-scroll::-webkit-scrollbar {
@@ -800,4 +949,416 @@
 .mtb-overlay-scroll::-webkit-scrollbar-thumb {
   background: #334155;
   border-radius: 4px;
+}
+
+.mtb-ai-risks {
+  font-size: 0.75rem;
+  color: #fbbf24;
+  margin-top: 0.35rem;
+}
+
+.mtb-manual-confirm {
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  border: 1px solid #3b82f6;
+  border-radius: 6px;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.mtb-manual-confirm-title {
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
+.mtb-manual-confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.mtb-manual-confirm-yes,
+.mtb-manual-confirm-no {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.mtb-manual-confirm-yes {
+  background: #16a34a;
+  color: #fff;
+}
+
+.mtb-manual-confirm-no {
+  background: #374151;
+  color: #e5e7eb;
+}
+
+.mtb-ai-decision-panel {
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  border: 1px solid #243041;
+  border-radius: 6px;
+  background: rgba(21, 27, 35, 0.8);
+  min-height: 56px;
+}
+
+.mtb-ai-decision-panel-stub {
+  cursor: default;
+  pointer-events: none;
+  margin-bottom: 0.35rem;
+}
+
+.mtb-ai-decision-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+
+.mtb-ai-decision-loading {
+  font-size: 0.75rem;
+  color: #9fb3c8;
+}
+
+.mtb-ai-mode-line {
+  font-size: 0.75rem;
+  color: #6eb6ff;
+  margin: 0.35rem 0;
+}
+
+.mtb-ai-threshold-hint {
+  color: #9fb3c8;
+}
+
+.mtb-ai-auto-gate {
+  margin: 0 0 4px;
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  min-height: 42px;
+  box-sizing: border-box;
+}
+
+.mtb-ai-auto-gate-empty {
+  visibility: hidden;
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.mtb-ai-auto-gate-blocked {
+  background: rgba(255, 120, 80, 0.12);
+  border: 1px solid rgba(255, 120, 80, 0.35);
+  color: #ffb199;
+}
+
+.mtb-ai-auto-gate-armed {
+  background: rgba(80, 200, 120, 0.1);
+  border: 1px solid rgba(80, 200, 120, 0.35);
+  color: #8fd9a8;
+}
+
+.mtb-radix-separator {
+  height: 1px;
+  background: var(--mtb-border);
+  margin: 8px 0;
+}
+
+/* Simple toggle — knob is ::before so host-page span/button rules cannot misalign it */
+.mtb-overlay .mtb-toggle {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-sizing: border-box !important;
+  pointer-events: auto !important;
+}
+
+.mtb-overlay .mtb-toggle-label {
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  color: var(--mtb-muted) !important;
+  letter-spacing: 0.03em !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.mtb-overlay button.mtb-toggle-track {
+  all: unset;
+  box-sizing: border-box !important;
+  position: relative !important;
+  display: inline-block !important;
+  width: 34px !important;
+  height: 18px !important;
+  min-width: 34px !important;
+  max-width: 34px !important;
+  min-height: 18px !important;
+  max-height: 18px !important;
+  border-radius: 9px !important;
+  border: 1px solid var(--mtb-border) !important;
+  background: #1a2332 !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+  pointer-events: auto !important;
+  vertical-align: middle !important;
+  overflow: hidden !important;
+  transition: background 0.15s ease, border-color 0.15s ease !important;
+}
+
+.mtb-overlay button.mtb-toggle-track::before {
+  content: '' !important;
+  position: absolute !important;
+  top: 2px !important;
+  left: 2px !important;
+  width: 12px !important;
+  height: 12px !important;
+  border-radius: 50% !important;
+  background: #64748b !important;
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  box-sizing: border-box !important;
+  pointer-events: none !important;
+  transition: transform 0.15s ease, background 0.15s ease !important;
+  transform: translateX(0) !important;
+}
+
+.mtb-overlay button.mtb-toggle-track[aria-checked='true'] {
+  background: rgba(34, 197, 94, 0.35) !important;
+  border-color: rgba(34, 197, 94, 0.45) !important;
+}
+
+.mtb-overlay button.mtb-toggle-track[aria-checked='true']::before {
+  transform: translateX(16px) !important;
+  background: var(--mtb-higher) !important;
+}
+
+.mtb-overlay button.mtb-toggle-track:focus-visible {
+  outline: 2px solid rgba(148, 163, 184, 0.55) !important;
+  outline-offset: 2px !important;
+}
+
+/* Radix collapsible */
+.mtb-radix-collapsible-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+  pointer-events: auto;
+  font-family: inherit;
+}
+
+.mtb-radix-collapsible-chevron {
+  flex-shrink: 0;
+  color: var(--mtb-muted);
+  transition: transform 0.15s ease;
+}
+
+.mtb-radix-collapsible-chevron-open {
+  transform: rotate(180deg);
+}
+
+.mtb-radix-collapsible-content[data-state='open'] {
+  animation: mtb-slide-down 0.15s ease-out;
+}
+
+@keyframes mtb-slide-down {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* AI decision hero */
+.mtb-decision-hero {
+  text-align: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  min-height: 72px;
+  box-sizing: border-box;
+}
+
+.mtb-decision-hero-label {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1.1;
+}
+
+.mtb-decision-hero-subline {
+  min-height: 18px;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--mtb-muted);
+}
+
+.mtb-decision-hero-subline-confidence {
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.mtb-decision-hero-subline-confirming {
+  color: var(--mtb-premium);
+  font-weight: 600;
+}
+
+.mtb-decision-hero-subline-empty {
+  visibility: hidden;
+}
+
+.mtb-decision-hero-confidence {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 4px;
+  opacity: 0.9;
+}
+
+.mtb-decision-hero-loading {
+  font-size: 11px;
+  color: var(--mtb-muted);
+  margin-top: 6px;
+}
+
+.mtb-decision-hero-buy {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--mtb-higher);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.mtb-decision-hero-sell {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--mtb-lower);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.mtb-decision-hero-wait {
+  background: #1a2332;
+  color: var(--mtb-wait);
+  border: 1px solid var(--mtb-border);
+}
+
+/* Market evidence */
+.mtb-evidence-panel {
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: #1a2332;
+  border: 1px solid var(--mtb-border);
+  border-radius: 8px;
+  min-height: 200px;
+  box-sizing: border-box;
+}
+
+.mtb-evidence-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--mtb-muted);
+  margin-bottom: 6px;
+}
+
+.mtb-evidence-empty {
+  font-size: 11px;
+  color: var(--mtb-muted);
+  margin: 0;
+}
+
+.mtb-evidence-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 8px;
+}
+
+.mtb-evidence-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: 11px;
+}
+
+.mtb-evidence-item-wide {
+  grid-column: 1 / -1;
+}
+
+.mtb-evidence-label {
+  color: var(--mtb-muted);
+  font-size: 10px;
+  flex: 0 0 100%;
+}
+
+.mtb-evidence-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.mtb-evidence-muted {
+  color: var(--mtb-muted);
+  font-weight: 500;
+}
+
+/* Badges */
+.mtb-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+
+.mtb-badge-positive {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--mtb-higher);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.mtb-badge-negative {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--mtb-lower);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.mtb-badge-neutral {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  border: 1px solid var(--mtb-border);
+}
+
+.mtb-badge-warn {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--mtb-premium);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.mtb-ai-reasoning,
+.mtb-ai-risks-block,
+.mtb-ai-supporting {
+  margin-top: 8px;
+}
+
+.mtb-ai-risks-list {
+  color: #fbbf24;
+}
+
+.mtb-ai-supporting-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
 }

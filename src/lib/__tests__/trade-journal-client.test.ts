@@ -10,7 +10,7 @@ const sendMessage = vi.fn();
 beforeEach(() => {
   sendMessage.mockReset();
   vi.stubGlobal('chrome', {
-    runtime: { sendMessage },
+    runtime: { sendMessage, id: 'test-extension-id' },
   });
 });
 
@@ -72,5 +72,10 @@ describe('trade-journal-client', () => {
     const count = await clientCountTradeRecords();
     expect(sendMessage).toHaveBeenCalledWith({ type: 'mtb-journal-count' });
     expect(count).toBe(3);
+  });
+
+  it('surfaces reload hint when extension context is invalidated', async () => {
+    Object.defineProperty(chrome.runtime, 'id', { value: undefined, configurable: true });
+    await expect(clientCountTradeRecords()).rejects.toThrow(/refresh this Exnova tab/i);
   });
 });

@@ -59,6 +59,7 @@ const DEFAULT_MOVING_AVERAGE = {
   fastPeriod: 9,
   slowPeriod: 21,
   type: 'ema' as const,
+  requireTrendAlignment: false,
 };
 const DEFAULT_RSI = {
   period: 14,
@@ -85,8 +86,9 @@ const DEFAULT_PROGRESSION = {
 };
 const DEFAULT_AI_ANALYST = {
   enabled: false,
-  model: 'google/gemini-2.0-flash-001',
-  autoApply: true,
+  model: 'google/gemini-3.5-flash',
+  autoApplyPerTrade: false,
+  autoApplyBatch: true,
   batchEveryNTrades: 25,
   requireBacktestForBatch: true,
   holdoutPercent: 20,
@@ -96,6 +98,7 @@ const DEFAULT_AUTO_TRADE = {
   dryRun: true,
   useCanvas: true,
   clickEngine: 'native' as const,
+  directionFilter: 'both' as const,
   canvas: {
     higherXPercent: 88,
     higherYPercent: 72,
@@ -103,6 +106,7 @@ const DEFAULT_AUTO_TRADE = {
     lowerYPercent: 82,
   },
 };
+const DEFAULT_CCI = { enabled: true, period: 14, overbought: 100, oversold: -100 };
 const DEFAULT_MARKET = {
   signalHoldSec: 2,
   signalCooldownSec: 5,
@@ -111,7 +115,19 @@ const DEFAULT_MARKET = {
   minimumSignalEdge: 5 as const,
 };
 
-function basePreset(expiry: TradeExpirySec): Omit<AppSettings, 'devLogWs' | 'aiAnalyst'> {
+function basePreset(
+  expiry: TradeExpirySec,
+): Omit<
+  AppSettings,
+  | 'devLogWs'
+  | 'aiAnalyst'
+  | 'tradingMode'
+  | 'aiBackend'
+  | 'autoTradingMode'
+  | 'aiConfidenceThreshold'
+  | 'aiAutoTradeThreshold'
+  | 'assignedStrategyId'
+> {
   const guides = {
     5: {
       rsi: DEFAULT_RSI,
@@ -172,11 +188,21 @@ function basePreset(expiry: TradeExpirySec): Omit<AppSettings, 'devLogWs' | 'aiA
       },
     },
   };
-  return guides[expiry];
+  return { ...guides[expiry], cci: { ...DEFAULT_CCI } };
 }
 
 export function getPreset(expiry: TradeExpirySec, devLogWs = false): AppSettings {
-  return { ...basePreset(expiry), aiAnalyst: { ...DEFAULT_AI_ANALYST }, devLogWs };
+  return {
+    ...basePreset(expiry),
+    aiAnalyst: { ...DEFAULT_AI_ANALYST },
+    tradingMode: 'LEGACY',
+    aiBackend: { apiBaseUrl: '', apiKey: '' },
+    autoTradingMode: 'manual',
+    aiConfidenceThreshold: 70,
+    aiAutoTradeThreshold: 85,
+    assignedStrategyId: null,
+    devLogWs,
+  };
 }
 
 export function getExnovaGuide(expiry: TradeExpirySec): ExnovaGuide {

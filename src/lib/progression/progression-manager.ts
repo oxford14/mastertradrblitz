@@ -183,6 +183,36 @@ export class ProgressionManager {
     });
   }
 
+  async ensureAmountApplied(): Promise<{ ok: boolean; message: string }> {
+    await this.storageReady;
+    const progression = this.deps.getSettings().progression;
+    if (!progression.enabled) {
+      return { ok: true, message: 'Progression disabled' };
+    }
+
+    const snapshot = this.getSnapshot();
+    if (
+      snapshot.stake === this.state.lastAppliedStake &&
+      this.state.lastAppliedStake > 0 &&
+      !this.state.lastWarning
+    ) {
+      return { ok: true, message: 'Stake already applied' };
+    }
+
+    await this.queueAmountUpdate();
+
+    if (this.state.lastWarning) {
+      return { ok: false, message: this.state.lastWarning };
+    }
+
+    const current = this.getSnapshot();
+    if (current.stake !== this.state.lastAppliedStake) {
+      return { ok: false, message: 'Stake field did not match progression level' };
+    }
+
+    return { ok: true, message: 'Stake applied' };
+  }
+
   async onTradeResult(outcome: TradeOutcome, attributed: boolean): Promise<void> {
     await this.storageReady;
     const progression = this.deps.getSettings().progression;

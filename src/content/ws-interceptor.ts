@@ -1,5 +1,9 @@
 const NativeWebSocket = window.WebSocket;
 
+function isTraderoomPage(): boolean {
+  return window.location.pathname.toLowerCase().includes('/traderoom');
+}
+
 function patchWebSocket(): void {
   if ((window as unknown as { __mtbWsPatched?: boolean }).__mtbWsPatched) return;
   (window as unknown as { __mtbWsPatched?: boolean }).__mtbWsPatched = true;
@@ -53,4 +57,6 @@ function patchWebSocket(): void {
   window.WebSocket = PatchedWebSocket;
 }
 
-patchWebSocket();
+if (isTraderoomPage()) {
+  patchWebSocket();
+}

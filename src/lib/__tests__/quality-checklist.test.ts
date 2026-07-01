@@ -29,9 +29,18 @@ function snapshot(
     maFast: 100,
     maSlow: 99,
     maTrend: 'up',
+    cci: null,
     ...overrides,
   };
 }
+
+const weakAdx = { adx: 10, plusDi: 5, minusDi: 5 };
+const noCross = {
+  bullishCrossValid: false,
+  bearishCrossValid: false,
+  barsSinceBullishCross: null,
+  barsSinceBearishCross: null,
+};
 
 const bullishPattern: PatternSnapshot = {
   pattern: 'Bullish Engulfing',
@@ -58,7 +67,7 @@ describe('quality checklist and dual confidence', () => {
       adx,
     );
     expect(higher.signal).toBe('HIGHER');
-    expect(higher.dualConfidence.higher.total).toBe(110);
+    expect(higher.dualConfidence.higher.total).toBe(128);
     expect(higher.debug.higherChecklist.bollinger).toBe(true);
     expect(higher.debug.higherChecklist.rejectionWick).toBe(true);
     expect(higher.debug.higherChecklist.movingAverageTrend).toBe(true);
@@ -70,22 +79,29 @@ describe('quality checklist and dual confidence', () => {
       nonePattern,
       EMPTY_WICK,
       DEFAULT_SETTINGS,
-      adx,
+      weakAdx,
     );
     expect(result.signal).toBe('HIGHER');
-    expect(result.dualConfidence.higher.total).toBe(70);
+    expect(result.dualConfidence.higher.total).toBe(78);
   });
 
   it('reports dominant side checklist when below threshold', () => {
     const result = evaluateSignal(
-      snapshot({ rsi: 50, price: 102, bbLower: 95, maTrend: 'neutral' }),
+      snapshot({
+        rsi: 50,
+        price: 102,
+        bbLower: 95,
+        maTrend: 'neutral',
+        bullishCrossValid: true,
+        barsSinceBullishCross: 1,
+      }),
       nonePattern,
       EMPTY_WICK,
       DEFAULT_SETTINGS,
-      adx,
+      weakAdx,
     );
     expect(result.signal).toBe('WAIT');
-    expect(result.dualConfidence.higher.total).toBe(30);
+    expect(result.dualConfidence.higher.total).toBe(38);
     expect(result.activeCheck.stochastic).toBe(true);
   });
 });

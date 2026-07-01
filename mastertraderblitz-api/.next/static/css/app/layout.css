@@ -1,0 +1,193 @@
+/*!*******************************************************************************************************************************************************************************************************************************************************************!*\
+  !*** css ../node_modules/next/dist/build/webpack/loaders/css-loader/src/index.js??ruleSet[1].rules[14].oneOf[10].use[2]!../node_modules/next/dist/build/webpack/loaders/postcss-loader/src/index.js??ruleSet[1].rules[14].oneOf[10].use[3]!./src/app/globals.css ***!
+  \*******************************************************************************************************************************************************************************************************************************************************************/
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  background: #0f1419;
+  color: #e7ecf1;
+}
+
+a {
+  color: #6eb6ff;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: #151b23;
+  border-right: 1px solid #243041;
+  padding: 1.5rem 1rem;
+}
+
+.sidebar h1 {
+  font-size: 1rem;
+  margin: 0 0 1.5rem;
+  color: #9fb3c8;
+}
+
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sidebar nav a {
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  color: #c5d0db;
+}
+
+.sidebar nav a:hover {
+  background: #1e2733;
+  text-decoration: none;
+}
+
+.main {
+  padding: 2rem;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-gap: 1rem;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.card {
+  background: #151b23;
+  border: 1px solid #243041;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.card .label {
+  font-size: 0.75rem;
+  color: #8a9bb0;
+  margin-bottom: 0.25rem;
+}
+
+.card .value {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+th,
+td {
+  border-bottom: 1px solid #243041;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+th {
+  color: #8a9bb0;
+  font-weight: 500;
+}
+
+.positive {
+  color: #4ade80;
+}
+
+.negative {
+  color: #f87171;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  grid-gap: 1.5rem;
+  gap: 1.5rem;
+}
+
+.chart-card {
+  background: #151b23;
+  border: 1px solid #243041;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.chart-card h3 {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: #9fb3c8;
+}
+
+.form-grid {
+  display: grid;
+  grid-gap: 1rem;
+  gap: 1rem;
+  max-width: 480px;
+}
+
+.form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.form-grid input,
+.form-grid select {
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #243041;
+  background: #0f1419;
+  color: #e7ecf1;
+}
+
+button {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #3b82f6;
+  background: #2563eb;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1d4ed8;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-buy {
+  background: #14532d;
+  color: #4ade80;
+}
+
+.badge-sell {
+  background: #7f1d1d;
+  color: #f87171;
+}
+
+.badge-wait {
+  background: #374151;
+  color: #d1d5db;
+}
+

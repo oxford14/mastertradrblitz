@@ -28,6 +28,7 @@ function warmedSnapshot(
     maFast: 100,
     maSlow: 100,
     maTrend: 'neutral',
+    cci: null,
     ...overrides,
   };
 }
@@ -102,5 +103,79 @@ describe('evaluateSignal threshold boundary', () => {
     };
     expect(resolveSignal(75, 0, strict).signal).toBe('WAIT');
     expect(resolveSignal(80, 0, strict).signal).toBe('HIGHER');
+  });
+});
+
+describe('evaluateSignal MA trend alignment gate', () => {
+  const pattern = { pattern: 'Bullish', bullishEngulfing: true, bearishEngulfing: false };
+  const wick = { bullishRejection: false, bearishRejection: false };
+
+  it('blocks HIGHER when MA trend is down and alignment required', () => {
+    const settings: AppSettings = {
+      ...DEFAULT_SETTINGS,
+      movingAverage: { ...DEFAULT_SETTINGS.movingAverage, requireTrendAlignment: true },
+    };
+    const result = evaluateSignal(
+      warmedSnapshot({
+        warmedUp: true,
+        warmupCurrent: 21,
+        rsi: 20,
+        bullishCrossValid: true,
+        maTrend: 'down',
+        maFast: 99,
+        maSlow: 100,
+        price: 94,
+        bbLower: 95,
+      }),
+      pattern,
+      wick,
+      settings,
+    );
+    expect(result.signal).toBe('WAIT');
+    expect(result.debug.reason).toContain('HIGHER blocked');
+  });
+
+  it('allows HIGHER when MA trend is up and alignment required', () => {
+    const settings: AppSettings = {
+      ...DEFAULT_SETTINGS,
+      movingAverage: { ...DEFAULT_SETTINGS.movingAverage, requireTrendAlignment: true },
+    };
+    const result = evaluateSignal(
+      warmedSnapshot({
+        warmedUp: true,
+        warmupCurrent: 21,
+        rsi: 20,
+        bullishCrossValid: true,
+        maTrend: 'up',
+        maFast: 101,
+        maSlow: 100,
+        price: 94,
+        bbLower: 95,
+      }),
+      pattern,
+      wick,
+      settings,
+    );
+    expect(result.signal).toBe('HIGHER');
+  });
+
+  it('does not block counter-trend when alignment is off', () => {
+    const result = evaluateSignal(
+      warmedSnapshot({
+        warmedUp: true,
+        warmupCurrent: 21,
+        rsi: 20,
+        bullishCrossValid: true,
+        maTrend: 'down',
+        maFast: 99,
+        maSlow: 100,
+        price: 94,
+        bbLower: 95,
+      }),
+      pattern,
+      wick,
+      DEFAULT_SETTINGS,
+    );
+    expect(result.signal).toBe('HIGHER');
   });
 });

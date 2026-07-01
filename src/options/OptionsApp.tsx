@@ -17,8 +17,18 @@ import {
   resolveModelSelectValue,
 } from '../lib/ai/openrouter-models';
 import { processTradeAnalysis, saveTradeToJournal } from '../lib/ai/trade-analyst-processor';
-import { clientListTradeRecords } from '../lib/ai/trade-journal-client';
-import type { AppSettings, ProgressionMaxLevel, TradeRecord } from '../types';
+import { runAggregateLearning } from '../lib/ai/aggregate-learning';
+import { applySettingsPatch } from '../lib/ai/apply-suggestions';
+import {
+  computeJournalInsights,
+  type JournalInsights,
+} from '../lib/ai/journal-insights';
+import {
+  clientCountTradeRecords,
+  clientListAggregateRuns,
+  clientListTradeRecords,
+} from '../lib/ai/trade-journal-client';
+import type { AggregateLearningRun, AppSettings, ProgressionMaxLevel, TradeRecord } from '../types';
 import { ExnovaGuideCard } from './ExnovaGuideCard';
 
 function journalVerdict(row: TradeRecord): string {
@@ -75,6 +85,9 @@ export function OptionsApp() {
   const [journalRecords, setJournalRecords] = useState<TradeRecord[]>([]);
   const [journalDetail, setJournalDetail] = useState<TradeRecord | null>(null);
   const [journalLoading, setJournalLoading] = useState(false);
+  const [journalInsights, setJournalInsights] = useState<JournalInsights | null>(null);
+  const [latestAggregateRun, setLatestAggregateRun] = useState<AggregateLearningRun | null>(null);
+  const [batchRunning, setBatchRunning] = useState(false);
   const [retryingFailed, setRetryingFailed] = useState(false);
   const apiKeyConfigured = isOpenRouterConfigured();
   const modelSelectValue = resolveModelSelectValue(settings.aiAnalyst.model);
@@ -92,10 +105,17 @@ export function OptionsApp() {
   const loadJournal = async () => {
     setJournalLoading(true);
     try {
-      const records = await clientListTradeRecords(200, 0, 'desc');
+      const [records, runs] = await Promise.all([
+        clientListTradeRecords(500, 0, 'desc'),
+        clientListAggregateRuns(1, 0, 'desc'),
+      ]);
       setJournalRecords(records);
+      setJournalInsights(records.length > 0 ? computeJournalInsights(records) : null);
+      setLatestAggregateRun(runs[0] ?? null);
     } catch {
       setJournalRecords([]);
+      setJournalInsights(null);
+      setLatestAggregateRun(null);
     } finally {
       setJournalLoading(false);
     }
@@ -265,6 +285,8 @@ export function OptionsApp() {
       await chrome.runtime.sendMessage({ type: 'mtb-journal-clear' });
       setJournalRecords([]);
       setJournalDetail(null);
+      setJournalInsights(null);
+      setLatestAggregateRun(null);
       setProbeResult('Trade journal cleared.');
     } catch {
       setProbeResult('Failed to clear journal.');
@@ -306,6 +328,11 @@ export function OptionsApp() {
 
   const handleTestModel = async () => {
     setProbeResult(null);
+    if (!settings.aiAnalyst.enabled) {
+      setProbeResult('Enable AI analyst first — test model uses OpenRouter credits.');
+      setTimeout(() => setProbeResult(null), 4000);
+      return;
+    }
     const model = normalizeOpenRouterModel(settings.aiAnalyst.model);
     try {
       const result = (await chrome.runtime.sendMessage({
@@ -319,6 +346,81 @@ export function OptionsApp() {
       setProbeResult('Model test failed — reload extension and try again.');
     }
     setTimeout(() => setProbeResult(null), 8000);
+  };
+
+  const handleRunBatchAnalysis = async () => {
+    if (!settings.aiAnalyst.enabled) {
+      setProbeResult('Enable AI analyst first.');
+      setTimeout(() => setProbeResult(null), 4000);
+      return;
+    }
+    if (!apiKeyConfigured) {
+      setProbeResult('OpenRouter API key missing — rebuild after adding .env.local key.');
+      setTimeout(() => setProbeResult(null), 4000);
+      return;
+    }
+    setBatchRunning(true);
+    setProbeResult('Running batch analysis…');
+    try {
+      const count = await clientCountTradeRecords();
+      if (count < 3) {
+        setProbeResult('Need at least 3 closed trades for batch analysis.');
+        return;
+      }
+      const current = await loadSettings();
+      const result = await runAggregateLearning(current, count);
+      if (result.error && !result.run) {
+        setProbeResult(result.error);
+        return;
+      }
+      if (result.settings !== current) {
+        const saved = await saveSettings(result.settings);
+        setSettings(saved);
+      }
+      if (result.run) {
+        setLatestAggregateRun(result.run);
+        const applied = result.run.backtestApplied && result.run.appliedPatches.length > 0;
+        setProbeResult(
+          applied
+            ? `Batch analysis applied ${result.run.appliedPatches.length} setting change(s).`
+            : result.run.settingsPatch && Object.keys(result.run.settingsPatch).length > 0
+              ? 'Batch analysis complete — review suggested patch below.'
+              : 'Batch analysis complete — no setting changes suggested.',
+        );
+      } else {
+        setProbeResult('Batch analysis complete.');
+      }
+      await loadJournal();
+    } catch (err) {
+      setProbeResult(err instanceof Error ? err.message : 'Batch analysis failed.');
+    } finally {
+      setBatchRunning(false);
+      setTimeout(() => setProbeResult(null), 8000);
+    }
+  };
+
+  const handleApplySuggestedPatch = async () => {
+    const run = latestAggregateRun;
+    const patch = run?.settingsPatch ?? {};
+    if (!run || Object.keys(patch).length === 0) {
+      setProbeResult('No suggested patch from the latest batch run.');
+      setTimeout(() => setProbeResult(null), 4000);
+      return;
+    }
+    const preview = applySettingsPatch(settings, patch, 2);
+    if (preview.applied.length === 0) {
+      setProbeResult('Suggested patch matches current settings — nothing to apply.');
+      setTimeout(() => setProbeResult(null), 4000);
+      return;
+    }
+    const summary = preview.applied
+      .map((p) => `${p.path}: ${JSON.stringify(p.before)} → ${JSON.stringify(p.after)}`)
+      .join('\n');
+    if (!window.confirm(`Apply suggested settings patch?\n\n${summary}`)) return;
+    const saved = await saveSettings(preview.settings);
+    setSettings(saved);
+    setProbeResult('Suggested patch applied.');
+    setTimeout(() => setProbeResult(null), 4000);
   };
 
   const handleRetryFailedAnalyses = async () => {
@@ -386,8 +488,104 @@ export function OptionsApp() {
     <div className="opt-page">
       <header className="opt-header">
         <h1>Master Trader Blitz</h1>
-        <p>Dual-confidence scoring — saved locally via Chrome Storage</p>
+        <p>V2 AI decision platform — saved locally via Chrome Storage</p>
       </header>
+
+      <section className="opt-section">
+        <h2>Trading Mode (V2)</h2>
+        <label className="opt-field opt-field-select">
+          <span>Mode</span>
+          <select
+            value={settings.tradingMode}
+            onChange={(e) =>
+              update({
+                tradingMode: e.target.value === 'AI' ? 'AI' : 'LEGACY',
+              })
+            }
+          >
+            <option value="LEGACY">LEGACY — confidence engine</option>
+            <option value="AI">AI — backend decision engine</option>
+          </select>
+        </label>
+        <p className="opt-hint">Reload the Exnova tab after switching mode.</p>
+        <label className="opt-field">
+          <span>API Base URL</span>
+          <input
+            type="url"
+            value={settings.aiBackend.apiBaseUrl}
+            onChange={(e) =>
+              update({
+                aiBackend: { ...settings.aiBackend, apiBaseUrl: e.target.value },
+              })
+            }
+            placeholder="http://localhost:3001"
+          />
+        </label>
+        <label className="opt-field">
+          <span>API Key</span>
+          <input
+            type="password"
+            value={settings.aiBackend.apiKey}
+            onChange={(e) =>
+              update({
+                aiBackend: { ...settings.aiBackend, apiKey: e.target.value },
+              })
+            }
+            placeholder="MTB_API_KEY"
+          />
+        </label>
+        <label className="opt-field opt-field-select">
+          <span>Auto Trading Mode</span>
+          <select
+            value={settings.autoTradingMode}
+            onChange={(e) =>
+              update({
+                autoTradingMode: e.target.value as AppSettings['autoTradingMode'],
+              })
+            }
+          >
+            <option value="manual">Manual — confirm in overlay</option>
+            <option value="semi">Semi Auto — above confidence threshold</option>
+            <option value="full">Full Auto — above auto-trade threshold</option>
+          </select>
+        </label>
+        <div className="opt-grid">
+          <NumField
+            label="AI Confidence Threshold (semi auto)"
+            value={settings.aiConfidenceThreshold}
+            min={0}
+            max={100}
+            onChange={(v) => update({ aiConfidenceThreshold: v })}
+          />
+          <NumField
+            label="AI Auto Trade Threshold (full auto)"
+            value={settings.aiAutoTradeThreshold}
+            min={0}
+            max={100}
+            onChange={(v) => update({ aiAutoTradeThreshold: v })}
+          />
+        </div>
+        <p className="opt-hint">
+          Semi auto uses <strong>Confidence Threshold</strong>. Full auto uses{' '}
+          <strong>Auto Trade Threshold</strong> (not the confidence field). The AI must
+          return BUY or SELL — WAIT never clicks.
+        </p>
+        <p className="opt-hint">
+          LEGACY mode uses the existing weighted confidence engine. AI mode sends market
+          snapshots to mastertraderblitz-api for BUY/SELL/WAIT decisions.
+        </p>
+        <p className="opt-hint opt-hint-warn">
+          <strong>OpenRouter credits:</strong> AI mode calls OpenRouter on every closed bar
+          via the API server key (<code>OPENROUTER_API_KEY</code> in{' '}
+          <code>mastertraderblitz-api/.env.local</code>). This is separate from the Analyst
+          toggle. Switch to <strong>LEGACY</strong> or stop the API server to halt usage.
+          Filter OpenRouter activity by app title &quot;Master Trader Blitz API&quot;.
+        </p>
+        <p className="opt-hint opt-hint-warn">
+          After switching between LEGACY and AI, reload your Exnova tab (trade.exnova.com)
+          so the overlay picks up the new mode.
+        </p>
+      </section>
 
       <section className="opt-section">
         <h2>Exnova platform setup</h2>
@@ -494,6 +692,7 @@ export function OptionsApp() {
         </p>
       </section>
 
+      {settings.tradingMode === 'LEGACY' && (
       <section className="opt-section">
         <h2>Signal</h2>
         <label className="opt-field opt-field-select">
@@ -546,6 +745,7 @@ export function OptionsApp() {
           otherwise the signal stays WAIT (conflicting evidence).
         </p>
       </section>
+      )}
 
       <section className="opt-section">
         <h2>Auto-Trade</h2>
@@ -580,6 +780,29 @@ export function OptionsApp() {
           />
           Dry run (log only, do not click)
         </label>
+        <label className="opt-field opt-field-select">
+          <span>Auto-click direction</span>
+          <select
+            value={settings.autoTrade.directionFilter}
+            disabled={!settings.autoTrade.enabled}
+            onChange={(e) =>
+              update({
+                autoTrade: {
+                  ...settings.autoTrade,
+                  directionFilter: e.target.value as AppSettings['autoTrade']['directionFilter'],
+                },
+              })
+            }
+          >
+            <option value="both">Both HIGHER and LOWER</option>
+            <option value="higher">HIGHER only</option>
+            <option value="lower">LOWER only</option>
+          </select>
+        </label>
+        <p className="opt-hint">
+          Limits which Exnova button auto-click will press when a signal confirms.
+          Manual confirm in AI mode respects the same filter.
+        </p>
         <p className="opt-field opt-field-static">
           <span>Click engine</span>
           <strong>Native helper (OS-level clicks)</strong>
@@ -937,8 +1160,10 @@ export function OptionsApp() {
           />
         </div>
         <p className="opt-hint">
-          Hold: wait before confirming HIGHER/LOWER (0 = instant). Cooldown:
-          minimum time before another auto-click, even if the same signal stays on.
+          Hold: wait before confirming HIGHER/LOWER (0 = instant). Cooldown is the
+          minimum gap between auto-clicks (never less than trade expiry). New
+          trades are also blocked while a previous trade is still open. When
+          progression is enabled, stake is applied before each auto-click.
         </p>
         <label className="opt-checkbox">
           <input
@@ -1013,13 +1238,77 @@ export function OptionsApp() {
             </select>
           </label>
         </div>
+        <label className="opt-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.movingAverage.requireTrendAlignment}
+            onChange={(e) =>
+              update({
+                movingAverage: {
+                  ...settings.movingAverage,
+                  requireTrendAlignment: e.target.checked,
+                },
+              })
+            }
+          />
+          Require trend alignment (block counter-trend entries)
+        </label>
+        <p className="opt-hint">
+          When enabled, HIGHER requires MA trend up and LOWER requires MA trend down.
+          Filters many counter-trend losses but also skips some counter-trend wins.
+        </p>
+      </section>
+
+      <section className="opt-section">
+        <h2>CCI</h2>
+        <label className="opt-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.cci.enabled}
+            onChange={(e) =>
+              update({
+                cci: { ...settings.cci, enabled: e.target.checked },
+              })
+            }
+          />
+          CCI Enabled
+        </label>
+        <div className="opt-grid">
+          <NumField
+            label="CCI Period"
+            value={settings.cci.period}
+            min={2}
+            max={100}
+            onChange={(v) => update({ cci: { ...settings.cci, period: v } })}
+          />
+          <NumField
+            label="CCI Overbought"
+            value={settings.cci.overbought}
+            min={1}
+            max={500}
+            onChange={(v) =>
+              update({ cci: { ...settings.cci, overbought: v } })
+            }
+          />
+          <NumField
+            label="CCI Oversold"
+            value={settings.cci.oversold}
+            min={-500}
+            max={-1}
+            onChange={(v) => update({ cci: { ...settings.cci, oversold: v } })}
+          />
+        </div>
+        <p className="opt-hint">
+          Adds confidence when CCI is at or below the oversold level for HIGHER,
+          or at or above the overbought level for LOWER.
+        </p>
       </section>
 
       <section className="opt-section opt-section-muted">
         <h2>Advanced filters</h2>
         <p className="opt-hint">
-          Bollinger and rejection wick contribute to confidence scoring. ADX is
-          shown in the overlay for trend strength context only.
+          Bollinger and rejection wick contribute to confidence scoring. ADX and
+          DI alignment add confidence boosters in the overlay.
         </p>
         <div className="opt-grid">
           <NumField
@@ -1054,8 +1343,11 @@ export function OptionsApp() {
         <h2>AI Trade Analyst</h2>
         <p className="opt-hint">
           Analyzes each closed auto-trade via OpenRouter and can auto-apply small
-          setting tweaks. API key is set in <code>.env.local</code> as{' '}
-          <code>VITE_OPENROUTER_API_KEY</code> — rebuild after changing.
+          setting tweaks. Uses extension API key (<code>VITE_OPENROUTER_API_KEY</code>).
+          You can also toggle <strong>Analyst</strong> on the overlay AI Analyst tab.
+          This is separate from AI trading decisions (API server). On OpenRouter, analyst
+          calls appear as &quot;Master Trader Blitz&quot;; live decisions as &quot;Master
+          Trader Blitz API&quot;.
         </p>
         <p className={apiKeyConfigured ? 'opt-toast' : 'opt-hint opt-hint-warn'}>
           API key:{' '}
@@ -1078,14 +1370,26 @@ export function OptionsApp() {
         <label className="opt-checkbox">
           <input
             type="checkbox"
-            checked={settings.aiAnalyst.autoApply}
+            checked={settings.aiAnalyst.autoApplyPerTrade}
             onChange={(e) =>
               update({
-                aiAnalyst: { ...settings.aiAnalyst, autoApply: e.target.checked },
+                aiAnalyst: { ...settings.aiAnalyst, autoApplyPerTrade: e.target.checked },
               })
             }
           />
-          Auto-apply whitelisted setting suggestions
+          Auto-apply per-trade suggestions (not recommended during drawdowns)
+        </label>
+        <label className="opt-checkbox">
+          <input
+            type="checkbox"
+            checked={settings.aiAnalyst.autoApplyBatch}
+            onChange={(e) =>
+              update({
+                aiAnalyst: { ...settings.aiAnalyst, autoApplyBatch: e.target.checked },
+              })
+            }
+          />
+          Auto-apply batch suggestions (after backtest gate passes)
         </label>
         <label className="opt-field">
           <span>OpenRouter model</span>
@@ -1138,7 +1442,7 @@ export function OptionsApp() {
           <button
             type="button"
             className="opt-btn"
-            disabled={!apiKeyConfigured}
+            disabled={!apiKeyConfigured || !settings.aiAnalyst.enabled}
             onClick={() => void handleTestModel()}
           >
             Test model
@@ -1190,9 +1494,85 @@ export function OptionsApp() {
         <p className="opt-hint">
           Auto-attributed trades only. Stored in IndexedDB on this browser profile.
         </p>
+        {journalInsights && (
+          <div className="opt-journal-insights" style={{ marginBottom: '16px' }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '14px' }}>Journal insights</h3>
+            <div className="opt-grid">
+              <p className="opt-hint" style={{ margin: 0 }}>
+                W/L: {journalInsights.wins}/{journalInsights.losses} (
+                {(journalInsights.winRate * 100).toFixed(0)}%)
+              </p>
+              <p className="opt-hint" style={{ margin: 0 }}>
+                Streaks: W×{journalInsights.maxWinStreak} / L×{journalInsights.maxLossStreak}
+              </p>
+              <p className="opt-hint" style={{ margin: 0 }}>
+                HIGHER: {journalInsights.higherWins}W / {journalInsights.higherLosses}L
+              </p>
+              <p className="opt-hint" style={{ margin: 0 }}>
+                LOWER: {journalInsights.lowerWins}W / {journalInsights.lowerLosses}L
+              </p>
+              <p className="opt-hint" style={{ margin: 0 }}>
+                Counter-trend losses: {journalInsights.counterTrendLosses}
+              </p>
+              <p className="opt-hint" style={{ margin: 0 }}>
+                AI verdicts: {journalInsights.goodEntryCount} good /{' '}
+                {journalInsights.badEntryCount} bad
+              </p>
+            </div>
+            {journalInsights.topThemes.length > 0 && (
+              <p className="opt-hint" style={{ marginTop: '8px' }}>
+                Top loss themes: {journalInsights.topThemes.join('; ')}
+              </p>
+            )}
+            {latestAggregateRun && (
+              <div style={{ marginTop: '12px' }}>
+                <p className="opt-hint" style={{ margin: '0 0 4px' }}>
+                  Latest batch ({new Date(latestAggregateRun.runAt).toLocaleString()},{' '}
+                  {latestAggregateRun.tradeCount} trades)
+                  {latestAggregateRun.backtestApplied
+                    ? ' — applied after backtest'
+                    : Object.keys(latestAggregateRun.settingsPatch).length > 0
+                      ? ' — patch pending review'
+                      : ' — no patch suggested'}
+                </p>
+                {latestAggregateRun.lessons.length > 0 && (
+                  <ul className="opt-hint" style={{ margin: '4px 0', paddingLeft: '18px' }}>
+                    {latestAggregateRun.lessons.map((lesson) => (
+                      <li key={lesson}>{lesson}</li>
+                    ))}
+                  </ul>
+                )}
+                {Object.keys(latestAggregateRun.settingsPatch).length > 0 && (
+                  <pre className="opt-hint" style={{ margin: '4px 0', fontSize: '11px' }}>
+                    {JSON.stringify(latestAggregateRun.settingsPatch, null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <div className="opt-actions" style={{ marginBottom: '12px' }}>
           <button type="button" className="opt-btn" onClick={() => void loadJournal()}>
             Refresh
+          </button>
+          <button
+            type="button"
+            className="opt-btn"
+            disabled={batchRunning || !settings.aiAnalyst.enabled || !apiKeyConfigured}
+            onClick={() => void handleRunBatchAnalysis()}
+          >
+            {batchRunning ? 'Analyzing…' : 'Run batch analysis now'}
+          </button>
+          <button
+            type="button"
+            className="opt-btn"
+            disabled={
+              !latestAggregateRun ||
+              Object.keys(latestAggregateRun.settingsPatch ?? {}).length === 0
+            }
+            onClick={() => void handleApplySuggestedPatch()}
+          >
+            Apply suggested patch
           </button>
           <button type="button" className="opt-btn" onClick={() => void handleExportJournalJson()}>
             Export JSON

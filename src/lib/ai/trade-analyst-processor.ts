@@ -13,8 +13,17 @@ import {
 } from './aggregate-learning';
 import { loadSettings, saveSettings } from '../settings/storage';
 import { isOpenRouterConfigured } from './openrouter-config';
+import {
+  EXTENSION_RELOAD_MESSAGE,
+  isExtensionContextValid,
+  toExtensionRuntimeError,
+} from '../extension-runtime';
 
 let queue: Promise<void> = Promise.resolve();
+
+function isContentScriptContext(): boolean {
+  return typeof window !== 'undefined';
+}
 
 function enqueue(task: () => Promise<void>): void {
   queue = queue.then(task).catch((err) => {
@@ -30,6 +39,28 @@ export async function processTradeAnalysis(record: TradeRecord): Promise<{
   ok: boolean;
   error?: string;
 }> {
+  if (isContentScriptContext() && !isExtensionContextValid()) {
+    // #region agent log
+    fetch('http://127.0.0.1:7586/ingest/37ededc7-a189-4332-bc8a-a70e2e6046fd', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Debug-Session-Id': '103ef7',
+      },
+      body: JSON.stringify({
+        sessionId: '103ef7',
+        hypothesisId: 'A',
+        location: 'trade-analyst-processor.ts:processTradeAnalysis',
+        message: 'skipped analysis — extension context invalid',
+        data: { tradeId: record.id },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    return { ok: false, error: EXTENSION_RELOAD_MESSAGE };
+  }
+
+  try {
   const settings = await loadSettings();
   if (!settings.aiAnalyst.enabled) {
     return { ok: false, error: 'AI analyst disabled in settings' };
@@ -56,7 +87,7 @@ export async function processTradeAnalysis(record: TradeRecord): Promise<{
   let appliedPatches: TradeAnalysis['appliedPatches'] = [];
   let nextSettings = settings;
 
-  if (settings.aiAnalyst.autoApply && Object.keys(patch).length > 0) {
+  if (settings.aiAnalyst.autoApplyPerTrade && Object.keys(patch).length > 0) {
     const applied = applySettingsPatch(settings, patch, 2);
     if (applied.applied.length > 0) {
       nextSettings = applied.settings;
@@ -99,6 +130,11 @@ export async function processTradeAnalysis(record: TradeRecord): Promise<{
   }
 
   return { ok: true };
+  } catch (error) {
+    const err = toExtensionRuntimeError(error);
+    console.warn('[MTB AI] Trade analysis failed:', err.message);
+    return { ok: false, error: err.message };
+  }
 }
 
 export function queueTradeAnalysis(record: TradeRecord): void {

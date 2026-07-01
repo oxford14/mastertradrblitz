@@ -4,12 +4,17 @@ import {
   findGlCanvas,
 } from '../lib/exnova/canvas-click';
 
+function isTraderoomPage(): boolean {
+  return window.location.pathname.toLowerCase().includes('/traderoom');
+}
+
 const CANVAS_CLICK_REQUEST = 'mtb-canvas-click-request';
 const CANVAS_CLICK_RESULT = 'mtb-canvas-click-result';
 const PAGE_CLICK_REQUEST = 'mtb-page-click-request';
 const PAGE_CLICK_RESULT = 'mtb-page-click-result';
 
-window.addEventListener('message', (event) => {
+if (isTraderoomPage()) {
+  window.addEventListener('message', (event) => {
   if (event.source !== window) return;
   const data = event.data;
   if (typeof data !== 'object' || data === null) return;
@@ -71,4 +76,5 @@ window.addEventListener('message', (event) => {
       '*',
     );
   }
-});
+  });
+}

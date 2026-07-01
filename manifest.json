@@ -8,6 +8,8 @@
   "host_permissions": [
     "https://trade.exnova.com/*",
     "https://openrouter.ai/*",
+    "http://localhost:3001/*",
+    "http://127.0.0.1:3001/*",
     "https://fonts.googleapis.com/*",
     "https://fonts.gstatic.com/*"
   ],
@@ -17,19 +19,19 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://trade.exnova.com/*"],
+      "matches": ["https://trade.exnova.com/*traderoom*"],
       "js": ["src/content/ws-interceptor.ts"],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["https://trade.exnova.com/*"],
+      "matches": ["https://trade.exnova.com/*traderoom*"],
       "js": ["src/content/page-bridge.ts"],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["https://trade.exnova.com/*"],
+      "matches": ["https://trade.exnova.com/*traderoom*"],
       "js": ["src/content/main.tsx"],
       "run_at": "document_idle"
     }

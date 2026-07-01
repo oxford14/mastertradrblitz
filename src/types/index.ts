@@ -37,6 +37,7 @@ export interface MovingAverageSettings {
   fastPeriod: number;
   slowPeriod: number;
   type: MaType;
+  requireTrendAlignment: boolean;
 }
 
 export interface StochasticSettings {
@@ -65,6 +66,13 @@ export type MinimumSignalConfidence = 50 | 60 | 70 | 80 | 90;
 
 export type MinimumSignalEdge = 3 | 5 | 10;
 
+export interface CciSettings {
+  enabled: boolean;
+  period: number;
+  overbought: number;
+  oversold: number;
+}
+
 export interface MarketSettings {
   tradeExpirySec: TradeExpirySec;
   candleIntervalSec: number;
@@ -84,11 +92,15 @@ export interface AutoTradeCanvasSettings {
 
 export type AutoTradeClickEngine = 'native';
 
+/** Which Exnova directions auto-click may place. */
+export type AutoTradeDirectionFilter = 'both' | 'higher' | 'lower';
+
 export interface AutoTradeSettings {
   enabled: boolean;
   dryRun: boolean;
   useCanvas: boolean;
   clickEngine: AutoTradeClickEngine;
+  directionFilter: AutoTradeDirectionFilter;
   canvas: AutoTradeCanvasSettings;
 }
 
@@ -170,10 +182,28 @@ export interface ExnovaGuide {
 export interface AiAnalystSettings {
   enabled: boolean;
   model: string;
-  autoApply: boolean;
+  autoApplyPerTrade: boolean;
+  autoApplyBatch: boolean;
   batchEveryNTrades: number;
   requireBacktestForBatch: boolean;
   holdoutPercent: number;
+}
+
+export type TradingMode = 'LEGACY' | 'AI';
+
+export type AutoTradingMode = 'manual' | 'semi' | 'full';
+
+export interface AiBackendSettings {
+  apiBaseUrl: string;
+  apiKey: string;
+}
+
+export interface AiDecisionOverlay {
+  decision: 'BUY' | 'SELL' | 'WAIT';
+  confidence: number;
+  reasoning: string[];
+  risks: string[];
+  supportingIndicators?: string[];
 }
 
 export interface AppSettings {
@@ -182,10 +212,17 @@ export interface AppSettings {
   adx: AdxSettings;
   bollinger: BollingerSettings;
   movingAverage: MovingAverageSettings;
+  cci: CciSettings;
   market: MarketSettings;
   autoTrade: AutoTradeSettings;
   progression: ProgressionSettings;
   aiAnalyst: AiAnalystSettings;
+  tradingMode: TradingMode;
+  aiBackend: AiBackendSettings;
+  autoTradingMode: AutoTradingMode;
+  aiConfidenceThreshold: number;
+  aiAutoTradeThreshold: number;
+  assignedStrategyId: string | null;
   devLogWs: boolean;
 }
 
@@ -336,6 +373,11 @@ export interface ConfidenceScore {
   bollinger: number;
   rejectionWick: number;
   movingAverage: number;
+  cci?: number;
+  fractal?: number;
+  adxStrength?: number;
+  diConfirmation?: number;
+  crossFreshness?: number;
   /** Raw sum (may exceed 100); use displayConfidence for UI */
   total: number;
 }
@@ -354,6 +396,14 @@ export interface DualConfidence {
   lower: ConfidenceScore;
 }
 
+export interface EnhancerFlags {
+  cci: boolean;
+  fractal: boolean;
+  adxStrength: boolean;
+  diConfirmation: boolean;
+  crossFreshness: boolean;
+}
+
 export interface SignalDebug {
   rsi: number;
   rsiOversold: boolean;
@@ -365,12 +415,16 @@ export interface SignalDebug {
   adx: number;
   plusDi: number;
   minusDi: number;
+  cci: number | null;
+  fractalStatus: 'Bullish' | 'Bearish' | 'None';
   pattern: CandlePatternName;
   evalDirection: TradeDirection;
   higherChecklist: QualityChecklist;
   lowerChecklist: QualityChecklist;
   higherConfidence: ConfidenceScore;
   lowerConfidence: ConfidenceScore;
+  higherEnhancerFlags: EnhancerFlags;
+  lowerEnhancerFlags: EnhancerFlags;
   maTrend: MaTrend;
   signal: Signal;
   reason: string;
@@ -398,6 +452,7 @@ export interface IndicatorSnapshot {
   maFast: number;
   maSlow: number;
   maTrend: MaTrend;
+  cci: number | null;
 }
 
 export interface RawSignalEvaluation {
@@ -425,6 +480,11 @@ export interface SignalResult {
   confidence: ConfidenceScore;
   signalDebugMode: boolean;
   crossValidityBars: number;
+  aiDecision?: AiDecisionOverlay | null;
+  aiDecisionId?: string | null;
+  aiSnapshot?: Record<string, unknown> | null;
+  aiError?: string | null;
+  aiLoading?: boolean;
 }
 
 export interface WsBridgeMessage {

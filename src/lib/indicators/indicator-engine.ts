@@ -8,6 +8,7 @@ import {
 } from './bollinger';
 import { computeEma } from './ema';
 import { computeSma } from './sma';
+import { computeCci } from './cci';
 
 function computeMa(
   closes: readonly number[],
@@ -24,12 +25,14 @@ function resolveMaTrend(fast: number, slow: number): MaTrend {
 }
 
 export function warmupRequired(settings: AppSettings): number {
-  const { rsi, stochastic, bollinger, movingAverage } = settings;
+  const { rsi, stochastic, bollinger, movingAverage, cci } = settings;
+  const cciWarmup = cci.enabled ? cci.period : 0;
   return Math.max(
     rsi.period + 1,
     stochastic.kPeriod + stochastic.smoothing + stochastic.dPeriod,
     bollinger.period,
     movingAverage.slowPeriod,
+    cciWarmup,
   );
 }
 
@@ -57,7 +60,9 @@ export class IndicatorEngine {
       settings.stochastic.smoothing !== this.settings.stochastic.smoothing ||
       settings.movingAverage.fastPeriod !== this.settings.movingAverage.fastPeriod ||
       settings.movingAverage.slowPeriod !== this.settings.movingAverage.slowPeriod ||
-      settings.movingAverage.type !== this.settings.movingAverage.type;
+      settings.movingAverage.type !== this.settings.movingAverage.type ||
+      settings.cci.enabled !== this.settings.cci.enabled ||
+      settings.cci.period !== this.settings.cci.period;
 
     this.settings = settings;
     if (needsReset) {
@@ -140,6 +145,10 @@ export class IndicatorEngine {
     const maFast = computeMa(closes, fastPeriod, type);
     const maSlow = computeMa(closes, slowPeriod, type);
     const maTrend = resolveMaTrend(maFast, maSlow);
+    const cci =
+      this.settings.cci.enabled
+        ? computeCci(candles, this.settings.cci.period)
+        : null;
 
     const warmedUp = count >= required;
     const snapshot: IndicatorSnapshot = {
@@ -164,6 +173,7 @@ export class IndicatorEngine {
       maFast,
       maSlow,
       maTrend,
+      cci,
     };
 
     this.lastSnapshot = snapshot;
@@ -201,6 +211,7 @@ export class IndicatorEngine {
       maFast: price,
       maSlow: price,
       maTrend: 'neutral',
+      cci: null,
     };
   }
 }

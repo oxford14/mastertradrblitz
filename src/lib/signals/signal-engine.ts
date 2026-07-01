@@ -2,6 +2,7 @@ import type {
   AppSettings,
   ConfidenceScore,
   DualConfidence,
+  EnhancerFlags,
   IndicatorSnapshot,
   MaTrend,
   PatternSnapshot,
@@ -20,6 +21,11 @@ import {
 } from '../indicators/indicator-engine';
 import { EMPTY_PATTERN } from '../patterns/candle-pattern-engine';
 import { EMPTY_WICK } from '../patterns/rejection-wick';
+import { EMPTY_FRACTAL, type FractalSnapshot } from '../patterns/fractal';
+import {
+  computeEnhancers,
+  fractalStatusLabel,
+} from './confidence-enhancers';
 
 export interface AdxDebug {
   adx: number;
@@ -120,14 +126,68 @@ function computeConfidence(
   };
 }
 
+function applyEnhancers(
+  core: ConfidenceScore,
+  direction: 'HIGHER' | 'LOWER',
+  indicators: IndicatorSnapshot,
+  adxDebug: AdxDebug,
+  fractal: FractalSnapshot,
+  settings: AppSettings,
+): { confidence: ConfidenceScore; flags: EnhancerFlags } {
+  const { score, flags } = computeEnhancers(direction, {
+    indicators,
+    adx: adxDebug,
+    fractal,
+    settings,
+  });
+  return {
+    confidence: {
+      ...core,
+      cci: score.cci,
+      fractal: score.fractal,
+      adxStrength: score.adxStrength,
+      diConfirmation: score.diConfirmation,
+      crossFreshness: score.crossFreshness,
+      total: core.total + score.total,
+    },
+    flags,
+  };
+}
+
 function computeDualConfidence(
   higher: QualityChecklist,
   lower: QualityChecklist,
   pattern: PatternSnapshot,
-): DualConfidence {
+  indicators: IndicatorSnapshot,
+  adxDebug: AdxDebug,
+  fractal: FractalSnapshot,
+  settings: AppSettings,
+): { dual: DualConfidence; higherFlags: EnhancerFlags; lowerFlags: EnhancerFlags } {
+  const higherCore = computeConfidence('HIGHER', higher, pattern);
+  const lowerCore = computeConfidence('LOWER', lower, pattern);
+  const higherApplied = applyEnhancers(
+    higherCore,
+    'HIGHER',
+    indicators,
+    adxDebug,
+    fractal,
+    settings,
+  );
+  const lowerApplied = applyEnhancers(
+    lowerCore,
+    'LOWER',
+    indicators,
+    adxDebug,
+    fractal,
+    settings,
+  );
   return {
-    higher: computeConfidence('HIGHER', higher, pattern),
-    lower: computeConfidence('LOWER', lower, pattern),
+    dual: {
+      higher: higherApplied.confidence,
+      lower: lowerApplied.confidence,
+    },
+    higherFlags: higherApplied.flags,
+    lowerFlags: lowerApplied.flags,
   };
 }
 
@@ -202,11 +262,20 @@ export function buildSignalDebug(
   settings: AppSettings,
   signal: Signal,
   adxDebug: AdxDebug = emptyAdx(),
+  fractal: FractalSnapshot = EMPTY_FRACTAL,
   extraReason?: string,
 ): SignalDebug {
   const higher = higherChecklist(indicators, pattern, wick, settings);
   const lower = lowerChecklist(indicators, pattern, wick, settings);
-  const dual = computeDualConfidence(higher, lower, pattern);
+  const { dual, higherFlags, lowerFlags } = computeDualConfidence(
+    higher,
+    lower,
+    pattern,
+    indicators,
+    adxDebug,
+    fractal,
+    settings,
+  );
   const evalDirection = pickDominantDirection(
     dual.higher.total,
     dual.lower.total,
@@ -247,12 +316,16 @@ export function buildSignalDebug(
     adx: adxDebug.adx,
     plusDi: adxDebug.plusDi,
     minusDi: adxDebug.minusDi,
+    cci: indicators.cci,
+    fractalStatus: fractalStatusLabel(fractal),
     pattern: pattern.pattern,
     evalDirection,
     higherChecklist: higher,
     lowerChecklist: lower,
     higherConfidence: dual.higher,
     lowerConfidence: dual.lower,
+    higherEnhancerFlags: higherFlags,
+    lowerEnhancerFlags: lowerFlags,
     maTrend: indicators.maTrend,
     signal,
     reason,
@@ -265,14 +338,24 @@ export function evaluateSignal(
   wick: WickSnapshot,
   settings: AppSettings,
   adxDebug: AdxDebug = emptyAdx(),
+  fractal: FractalSnapshot = EMPTY_FRACTAL,
   extraReason?: string,
 ): RawSignalEvaluation {
   const higher = higherChecklist(indicators, pattern, wick, settings);
   const lower = lowerChecklist(indicators, pattern, wick, settings);
-  const dual = computeDualConfidence(higher, lower, pattern);
+  const { dual } = computeDualConfidence(
+    higher,
+    lower,
+    pattern,
+    indicators,
+    adxDebug,
+    fractal,
+    settings,
+  );
 
   let signal: Signal = 'WAIT';
   let tradeDirection: TradeDirection = null;
+  let blockReason: string | undefined;
 
   if (indicators.warmedUp) {
     const resolved = resolveSignal(
@@ -290,6 +373,18 @@ export function evaluateSignal(
             indicators,
             settings,
           );
+
+    if (settings.movingAverage.requireTrendAlignment) {
+      if (signal === 'HIGHER' && !maTrendAlignsHigher(indicators)) {
+        signal = 'WAIT';
+        tradeDirection = null;
+        blockReason = 'HIGHER blocked: MA trend not up';
+      } else if (signal === 'LOWER' && !maTrendAlignsLower(indicators)) {
+        signal = 'WAIT';
+        tradeDirection = null;
+        blockReason = 'LOWER blocked: MA trend not down';
+      }
+    }
   }
 
   const activeCheck = activeCheckFor(signal, higher, lower, dual);
@@ -300,7 +395,8 @@ export function evaluateSignal(
     settings,
     signal,
     adxDebug,
-    extraReason,
+    fractal,
+    blockReason ?? extraReason,
   );
 
   return {
@@ -315,7 +411,7 @@ export function evaluateSignal(
   };
 }
 
-export { EMPTY_PATTERN, EMPTY_WICK };
+export { EMPTY_FRACTAL, EMPTY_PATTERN, EMPTY_WICK };
 
 export function maTrendLabel(trend: MaTrend): string {
   if (trend === 'up') return '✓ Trend Up';

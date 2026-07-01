@@ -69,7 +69,7 @@ export async function runAggregateLearning(
       backtestScore = comparison.candidateScore;
       shouldApply = comparison.applies;
     }
-    if (shouldApply && settings.aiAnalyst.autoApply) {
+    if (shouldApply && settings.aiAnalyst.autoApplyBatch) {
       nextSettings = candidate;
       appliedPatches = applied;
       backtestApplied = true;

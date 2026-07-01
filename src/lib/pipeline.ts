@@ -4,9 +4,16 @@ import { CandleAggregator } from '../lib/market/candle-aggregator';
 import { CandleStore } from '../lib/market/candle-store';
 import { IndicatorEngine } from '../lib/indicators/indicator-engine';
 import { evaluateSignal } from '../lib/signals/signal-engine';
+import {
+  attachAiToSignalResult,
+  resetAiDecisionState,
+  resolveBarCloseDecision,
+  resolveLiveDisplayEval,
+} from '../lib/decision/decision-adapter';
 import { detectEngulfing } from '../lib/patterns/candle-pattern-engine';
 import { detectRejectionWick } from '../lib/patterns/rejection-wick';
 import { computeAdx } from '../lib/indicators/adx';
+import { detectFractals } from '../lib/patterns/fractal';
 import { SignalHoldTracker } from '../lib/signals/signal-hold';
 import { SignalCooldownTracker } from '../lib/signals/signal-cooldown';
 import { loadSettings } from '../lib/settings/storage';
@@ -26,16 +33,24 @@ function eventPrice(event: MarketEvent): number {
 interface BarCloseSnapshot {
   signal: Signal;
   tradeDirection: TradeDirection;
+  aiConfidence: number;
 }
 
 const emptyBarClose = (): BarCloseSnapshot => ({
   signal: 'WAIT',
   tradeDirection: null,
+  aiConfidence: 0,
 });
 
 interface TradeConfirmedEvent {
   signal: Signal;
   warmedUp: boolean;
+  aiConfidence: number;
+}
+
+export interface TradePlacementGate {
+  canPlaceTrade(now: number): boolean;
+  secondsUntilReady(now: number): number;
 }
 
 export class TradingPipeline {
@@ -53,6 +68,8 @@ export class TradingPipeline {
   private tradeConfirmListeners = new Set<(e: TradeConfirmedEvent) => void>();
   private holdTimer: ReturnType<typeof setInterval> | null = null;
   private instantConfirmBarTs: number | null = null;
+  private tradeGate: TradePlacementGate | null = null;
+  private activeSymbol = '';
 
   constructor(settings: AppSettings) {
     this.settings = settings;
@@ -62,10 +79,12 @@ export class TradingPipeline {
     this.startHoldTimer();
 
     this.symbolTracker.setOnChange(() => {
+      this.activeSymbol = this.symbolTracker.getPrimaryId() ?? '';
       this.store.clear();
       this.holdTracker.reset();
       this.cooldownTracker.reset();
       this.instantConfirmBarTs = null;
+      resetAiDecisionState();
       this.aggregator = new CandleAggregator(this.settings.market.candleIntervalSec);
       this.indicatorEngine.updateSettings(this.settings);
       this.recompute(false);
@@ -83,8 +102,12 @@ export class TradingPipeline {
     return () => this.tradeConfirmListeners.delete(listener);
   }
 
-  private emitTradeConfirmed(signal: Signal, warmedUp: boolean): void {
-    const event: TradeConfirmedEvent = { signal, warmedUp };
+  private emitTradeConfirmed(
+    signal: Signal,
+    warmedUp: boolean,
+    aiConfidence: number,
+  ): void {
+    const event: TradeConfirmedEvent = { signal, warmedUp, aiConfidence };
     for (const l of this.tradeConfirmListeners) l(event);
   }
 
@@ -93,7 +116,16 @@ export class TradingPipeline {
   }
 
   updateSettings(settings: AppSettings): void {
+    const modeChanged = this.settings.tradingMode !== settings.tradingMode;
     this.settings = settings;
+    if (modeChanged) {
+      resetAiDecisionState();
+      if (settings.tradingMode !== 'AI') {
+        this.holdTracker.reset();
+        this.lastBarCloseRaw = emptyBarClose();
+        this.wasConfirming = false;
+      }
+    }
     this.aggregator.setIntervalSec(settings.market.candleIntervalSec);
     this.store.setIntervalSec(settings.market.candleIntervalSec);
     this.indicatorEngine.updateSettings(settings);
@@ -107,6 +139,7 @@ export class TradingPipeline {
     for (const event of events) {
       const price = eventPrice(event);
       if (!this.symbolTracker.accept(event.symbol, price)) continue;
+      this.activeSymbol = event.symbol;
 
       if (event.type === 'candle' && event.isClosed) {
         this.store.addClosed({
@@ -144,13 +177,21 @@ export class TradingPipeline {
     this.store.setWsConnected(connected);
   }
 
+  dispose(): void {
+    if (this.holdTimer) {
+      clearInterval(this.holdTimer);
+      this.holdTimer = null;
+    }
+  }
+
   private startHoldTimer(): void {
     if (this.holdTimer) clearInterval(this.holdTimer);
     this.holdTimer = setInterval(() => {
       const now = Date.now();
       if (
         this.lastResult?.confirming ||
-        this.cooldownTracker.isActive(now)
+        this.cooldownTracker.isActive(now) ||
+        !this.canPlaceTrade(now)
       ) {
         this.recompute(false);
       }
@@ -161,7 +202,22 @@ export class TradingPipeline {
     return this.settings.market.tradeExpirySec;
   }
 
-  private recompute(barClosed: boolean): void {
+  setTradePlacementGate(gate: TradePlacementGate | null): void {
+    this.tradeGate = gate;
+  }
+
+  private cooldownDurationMs(): number {
+    return Math.max(
+      this.settings.market.signalCooldownSec * 1000,
+      this.settings.market.tradeExpirySec * 1000,
+    );
+  }
+
+  private canPlaceTrade(now: number): boolean {
+    return this.tradeGate?.canPlaceTrade(now) ?? true;
+  }
+
+  private recompute(barClosed: boolean, aiSignalArrived = false): void {
     const now = Date.now();
     const closedCandles = this.store.getClosedCandles();
     const closedIndicators = this.indicatorEngine.computeFromCandles(closedCandles);
@@ -175,26 +231,61 @@ export class TradingPipeline {
     const pattern = detectEngulfing(closedCandles);
     const wick = detectRejectionWick(closedCandles);
     const adxResult = computeAdx(closedCandles, this.settings.adx.period);
+    const fractal = detectFractals(closedCandles);
 
-    if (barClosed && this.cooldownTracker.canAcceptNewBarSignal(now)) {
-      const raw = evaluateSignal(
-        closedIndicators,
-        pattern,
-        wick,
-        this.settings,
-        adxResult,
-      );
-      this.lastBarCloseRaw = {
-        signal: raw.signal,
-        tradeDirection: raw.tradeDirection,
-      };
-      this.holdTracker.onBarClose(raw.signal, now);
+    if (
+      barClosed &&
+      this.cooldownTracker.canAcceptNewBarSignal(now) &&
+      this.canPlaceTrade(now)
+    ) {
+      const prevClose = closedCandles[closedCandles.length - 2]?.close;
+      if (this.settings.tradingMode !== 'AI') {
+        const raw = evaluateSignal(
+          closedIndicators,
+          pattern,
+          wick,
+          this.settings,
+          adxResult,
+          fractal,
+        );
+        this.lastBarCloseRaw = {
+          signal: raw.signal,
+          tradeDirection: raw.tradeDirection,
+          aiConfidence: raw.confidence?.total ?? 0,
+        };
+        this.holdTracker.onBarClose(raw.signal, now);
+      } else {
+        void resolveBarCloseDecision({
+          settings: this.settings,
+          asset: this.activeSymbol || closedCandles[closedCandles.length - 1]?.symbol || 'UNKNOWN',
+          indicators: closedIndicators,
+          pattern,
+          wick,
+          adxResult,
+          fractal,
+          prevClose,
+        }).then(({ signal, raw }) => {
+          if (this.settings.tradingMode !== 'AI') return;
+          this.lastBarCloseRaw = {
+            signal,
+            tradeDirection: raw.tradeDirection,
+            aiConfidence: raw.confidence?.total ?? 0,
+          };
+          // The AI decision resolves asynchronously (API latency), so start the
+          // hold window from when the decision actually arrives — not the stale
+          // bar-close timestamp — and allow this pass to emit the trade.
+          this.holdTracker.onBarClose(signal, Date.now());
+          this.recompute(false, true);
+        });
+      }
     }
 
     const holdMs = this.settings.market.signalHoldSec * 1000;
     const hold = this.holdTracker.getState(now, holdMs);
     const closedBarTs = closedCandles[closedCandles.length - 1]?.timestamp ?? null;
-    const canEmitTrade = this.cooldownTracker.canAcceptNewBarSignal(now);
+    const canEmitTrade =
+      this.cooldownTracker.canAcceptNewBarSignal(now) && this.canPlaceTrade(now);
+    const cooldownMs = this.cooldownDurationMs();
 
     if (
       canEmitTrade &&
@@ -202,28 +293,28 @@ export class TradingPipeline {
       !hold.confirming &&
       (hold.signal === 'HIGHER' || hold.signal === 'LOWER')
     ) {
-      this.cooldownTracker.onSignalConfirmed(
+      this.cooldownTracker.onSignalConfirmed(hold.signal, now, cooldownMs);
+      this.emitTradeConfirmed(
         hold.signal,
-        now,
-        this.settings.market.signalCooldownSec * 1000,
+        closedIndicators.warmedUp,
+        this.lastBarCloseRaw.aiConfidence,
       );
-      this.emitTradeConfirmed(hold.signal, closedIndicators.warmedUp);
     } else if (
       canEmitTrade &&
-      barClosed &&
+      (barClosed || aiSignalArrived) &&
       holdMs === 0 &&
       !hold.confirming &&
       (hold.signal === 'HIGHER' || hold.signal === 'LOWER') &&
       closedBarTs !== null &&
       closedBarTs !== this.instantConfirmBarTs
     ) {
-      this.cooldownTracker.onSignalConfirmed(
-        hold.signal,
-        now,
-        this.settings.market.signalCooldownSec * 1000,
-      );
+      this.cooldownTracker.onSignalConfirmed(hold.signal, now, cooldownMs);
       this.instantConfirmBarTs = closedBarTs;
-      this.emitTradeConfirmed(hold.signal, closedIndicators.warmedUp);
+      this.emitTradeConfirmed(
+        hold.signal,
+        closedIndicators.warmedUp,
+        this.lastBarCloseRaw.aiConfidence,
+      );
     }
     this.wasConfirming = hold.confirming;
 
@@ -232,43 +323,79 @@ export class TradingPipeline {
       hold.confirming ? 'WAIT' : hold.signal,
     );
 
-    let liveEval = evaluateSignal(
-      displayIndicators,
+    let liveEval = resolveLiveDisplayEval({
+      settings: this.settings,
+      indicators: displayIndicators,
       pattern,
       wick,
-      this.settings,
       adxResult,
-    );
+      fractal,
+    });
     if (cooldown.locked) {
-      liveEval = evaluateSignal(
-        displayIndicators,
+      liveEval = resolveLiveDisplayEval({
+        settings: this.settings,
+        indicators: displayIndicators,
         pattern,
         wick,
-        this.settings,
         adxResult,
-        `Signal locked (${cooldown.secondsRemaining}s remaining)`,
-      );
+        fractal,
+        reason: `Signal locked (${cooldown.secondsRemaining}s remaining)`,
+      });
+    } else if (!this.canPlaceTrade(now)) {
+      const tradeWaitSec = this.tradeGate?.secondsUntilReady(now) ?? 0;
+      if (tradeWaitSec > 0) {
+        liveEval = resolveLiveDisplayEval({
+          settings: this.settings,
+          indicators: displayIndicators,
+          pattern,
+          wick,
+          adxResult,
+          fractal,
+          reason: `Waiting for trade to close (${tradeWaitSec}s remaining)`,
+        });
+      }
     }
 
-    const result: SignalResult = {
-      signal: cooldown.locked
-        ? cooldown.signal
-        : hold.confirming
-          ? 'WAIT'
-          : hold.signal,
-      rawSignal: this.lastBarCloseRaw.signal,
-      confirming: cooldown.locked ? false : hold.confirming,
-      holdSecondsRemaining: hold.holdSecondsRemaining,
-      tradeDirection: liveEval.tradeDirection,
-      activeCheck: liveEval.activeCheck,
-      debug: liveEval.debug,
-      indicators: displayIndicators,
-      pattern: liveEval.pattern,
-      dualConfidence: liveEval.dualConfidence,
-      confidence: liveEval.confidence,
-      signalDebugMode: this.settings.market.signalDebugMode,
-      crossValidityBars: this.settings.stochastic.crossValidityBars,
-    };
+    const closedCandlesForCtx = this.store.getClosedCandles();
+    const prevClose =
+      closedCandlesForCtx[closedCandlesForCtx.length - 2]?.close;
+
+    const result: SignalResult = attachAiToSignalResult(
+      {
+        signal: cooldown.locked
+          ? cooldown.signal
+          : hold.confirming
+            ? 'WAIT'
+            : hold.signal,
+        rawSignal: this.lastBarCloseRaw.signal,
+        confirming: cooldown.locked ? false : hold.confirming,
+        holdSecondsRemaining: hold.holdSecondsRemaining,
+        tradeDirection: liveEval.tradeDirection,
+        activeCheck: liveEval.activeCheck,
+        debug: liveEval.debug,
+        indicators: displayIndicators,
+        pattern: liveEval.pattern,
+        dualConfidence: liveEval.dualConfidence,
+        confidence: liveEval.confidence,
+        signalDebugMode: this.settings.market.signalDebugMode,
+        crossValidityBars: this.settings.stochastic.crossValidityBars,
+      },
+      this.settings,
+      this.settings.tradingMode === 'AI'
+        ? {
+            asset:
+              this.activeSymbol ||
+              closedCandlesForCtx[closedCandlesForCtx.length - 1]?.symbol ||
+              'UNKNOWN',
+            indicators: displayIndicators,
+            pattern,
+            wick,
+            adxResult,
+            fractal,
+            prevClose,
+          }
+        : undefined,
+    );
 
     this.lastResult = result;
     for (const l of this.resultListeners) l(result);

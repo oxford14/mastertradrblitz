@@ -147,4 +147,39 @@ describe('ProgressionManager', () => {
     await manager.onTradeResult('loss', true);
     expect(manager.getSnapshot().stake).toBe(22);
   });
+
+  it('ensureAmountApplied updates stake when level changed', async () => {
+    await manager.onTradeResult('loss', true);
+    updateAmount.mockClear();
+
+    await memory.set(PROGRESSION_STATE_STORAGE_KEY, {
+      currentLevel: 2,
+      stopped: false,
+      lastAppliedStake: 200,
+      lastWarning: null,
+    });
+    await manager.load();
+
+    const result = await manager.ensureAmountApplied();
+    expect(result.ok).toBe(true);
+    expect(updateAmount).toHaveBeenCalledWith({
+      stake: 488,
+      dryRun: DEFAULT_SETTINGS.autoTrade.dryRun,
+    });
+  });
+
+  it('ensureAmountApplied skips update when stake already applied', async () => {
+    await memory.set(PROGRESSION_STATE_STORAGE_KEY, {
+      currentLevel: 1,
+      stopped: false,
+      lastAppliedStake: 200,
+      lastWarning: null,
+    });
+    await manager.load();
+    updateAmount.mockClear();
+
+    const result = await manager.ensureAmountApplied();
+    expect(result.ok).toBe(true);
+    expect(updateAmount).not.toHaveBeenCalled();
+  });
 });

@@ -23,6 +23,16 @@ export class AutoTradeController {
     return this.status;
   }
 
+  setSkipped(signal: Signal, message: string): void {
+    if (signal !== 'HIGHER' && signal !== 'LOWER') return;
+    this.status = {
+      action: 'skipped',
+      signal,
+      message,
+      at: Date.now(),
+    };
+  }
+
   async onTradeConfirmed(
     signal: Signal,
     warmedUp: boolean,

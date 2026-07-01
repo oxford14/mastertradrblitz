@@ -156,4 +156,46 @@ describe('TradingPipeline trade cooldown', () => {
     expect(trades.length).toBeLessThan(barTimes.length);
     expect(trades).toEqual(['HIGHER', 'HIGHER', 'HIGHER']);
   });
+
+  it('blocks new emits while trade placement gate reports open trade', () => {
+    const pipeline = new TradingPipeline(settingsWithCooldown(0));
+    let open = false;
+    pipeline.setTradePlacementGate({
+      canPlaceTrade: () => !open,
+      secondsUntilReady: () => (open ? 3 : 0),
+    });
+    const trades: string[] = [];
+    pipeline.onTradeConfirmed(({ signal }) => {
+      trades.push(signal);
+      open = true;
+    });
+
+    lockSymbol(pipeline, 0);
+    vi.setSystemTime(5_000);
+    pipeline.handleWsMessage(closedCandlePayload(5_000));
+    vi.setSystemTime(10_000);
+    pipeline.handleWsMessage(closedCandlePayload(10_000));
+
+    expect(trades).toEqual(['HIGHER']);
+  });
+
+  it('uses trade expiry as cooldown floor when it exceeds signal cooldown', () => {
+    const pipeline = new TradingPipeline({
+      ...settingsWithCooldown(3),
+      market: {
+        ...settingsWithCooldown(3).market,
+        tradeExpirySec: 5,
+      },
+    });
+    const trades: string[] = [];
+    pipeline.onTradeConfirmed(({ signal }) => trades.push(signal));
+
+    lockSymbol(pipeline, 0);
+    vi.setSystemTime(5_000);
+    pipeline.handleWsMessage(closedCandlePayload(5_000));
+    vi.setSystemTime(8_000);
+    pipeline.handleWsMessage(closedCandlePayload(8_000));
+
+    expect(trades).toEqual(['HIGHER']);
+  });
 });

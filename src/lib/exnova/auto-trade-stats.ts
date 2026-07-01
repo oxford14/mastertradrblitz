@@ -123,6 +123,14 @@ function pruneExpiredPending(
   return pending.filter((p) => now - p.placedAt <= p.expirySec * 1000 + CLOSE_BUFFER_MS + 30_000);
 }
 
+function pendingOpenUntil(pending: PendingAutoTrade): number {
+  return pending.placedAt + pending.expirySec * 1000 + CLOSE_BUFFER_MS;
+}
+
+function isPendingOpen(pending: PendingAutoTrade, now: number): boolean {
+  return now < pendingOpenUntil(pending);
+}
+
 export class AutoTradeStatsTracker {
   private data: AutoTradeStatsData = emptyData();
   private storage: StorageAdapter = inMemoryFallback;
@@ -178,8 +186,25 @@ export class AutoTradeStatsTracker {
     this.emit();
   }
 
-  async onAutoTradePlaced(signal: Signal, expirySec: number): Promise<void> {
-    await this.storageReady;
+  hasOpenTrade(now: number = Date.now()): boolean {
+    this.data.pending = pruneExpiredPending(this.data.pending, now);
+    return this.data.pending.some((p) => isPendingOpen(p, now));
+  }
+
+  secondsUntilTradeSlot(now: number = Date.now()): number {
+    this.data.pending = pruneExpiredPending(this.data.pending, now);
+    let minRemaining = 0;
+    for (const pending of this.data.pending) {
+      const openUntil = pendingOpenUntil(pending);
+      if (now >= openUntil) continue;
+      const remaining = Math.ceil((openUntil - now) / 1000);
+      minRemaining =
+        minRemaining === 0 ? remaining : Math.min(minRemaining, remaining);
+    }
+    return minRemaining;
+  }
+
+  registerPendingPlacement(signal: Signal, expirySec: number): void {
     if (signal !== 'HIGHER' && signal !== 'LOWER') return;
     const now = Date.now();
     this.data.pending = pruneExpiredPending(this.data.pending, now);
@@ -188,8 +213,29 @@ export class AutoTradeStatsTracker {
       signal,
       expirySec,
     });
-    await this.persist();
     this.emit();
+  }
+
+  rollbackLastPending(): void {
+    if (this.data.pending.length === 0) return;
+    this.data.pending.pop();
+    this.emit();
+    void this.persist();
+  }
+
+  async persistPendingPlacement(signal: Signal, expirySec: number): Promise<void> {
+    await this.storageReady;
+    this.registerPendingPlacement(signal, expirySec);
+    await this.persist();
+  }
+
+  async saveState(): Promise<void> {
+    await this.storageReady;
+    await this.persist();
+  }
+
+  async onAutoTradePlaced(signal: Signal, expirySec: number): Promise<void> {
+    await this.persistPendingPlacement(signal, expirySec);
   }
 
   async onTradeClosed(event: TradeCloseEvent): Promise<boolean> {

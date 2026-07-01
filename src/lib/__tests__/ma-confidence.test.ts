@@ -33,9 +33,18 @@ function snapshot(
     maFast: 100,
     maSlow: 99,
     maTrend: 'up',
+    cci: null,
     ...overrides,
   };
 }
+
+const weakAdx = { adx: 10, plusDi: 5, minusDi: 5 };
+const noCross = {
+  bullishCrossValid: false,
+  bearishCrossValid: false,
+  barsSinceBullishCross: null,
+  barsSinceBearishCross: null,
+};
 
 const nonePattern: PatternSnapshot = {
   pattern: 'None',
@@ -52,17 +61,17 @@ describe('moving average confidence', () => {
       nonePattern,
       EMPTY_WICK,
       DEFAULT_SETTINGS,
-      adx,
+      weakAdx,
     );
     const withMa = evaluateSignal(
       snapshot({ maTrend: 'up', maFast: 101, maSlow: 100 }),
       nonePattern,
       EMPTY_WICK,
       DEFAULT_SETTINGS,
-      adx,
+      weakAdx,
     );
-    expect(withoutMa.dualConfidence.higher.total).toBe(70);
-    expect(withMa.dualConfidence.higher.total).toBe(80);
+    expect(withoutMa.dualConfidence.higher.total).toBe(78);
+    expect(withMa.dualConfidence.higher.total).toBe(88);
     expect(withMa.signal).toBe('HIGHER');
   });
 
@@ -72,7 +81,7 @@ describe('moving average confidence', () => {
       nonePattern,
       EMPTY_WICK,
       DEFAULT_SETTINGS,
-      adx,
+      weakAdx,
     );
     expect(result.dualConfidence.higher.movingAverage).toBe(0);
     expect(result.signal).toBe('HIGHER');
@@ -92,7 +101,7 @@ describe('moving average confidence', () => {
       DEFAULT_SETTINGS,
       adx,
     );
-    expect(result.dualConfidence.higher.total).toBe(MAX_RAW_CONFIDENCE);
+    expect(result.dualConfidence.higher.total).toBe(MAX_RAW_CONFIDENCE + 18);
     expect(displayConfidence(result.dualConfidence.higher.total)).toBe(100);
   });
 });
